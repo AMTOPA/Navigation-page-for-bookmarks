@@ -1,61 +1,72 @@
-# Navigation page for bookmarks
+<center><h1>Navigation Page for Bookmarks 🌐🔖</h1></center>
 
-为您的edge浏览器收藏夹建立一个导航页面。
+<center><a href="README_zh.md">简体中文</a>  |  ENGLISH</center>
 
+[![GitHub release](https://img.shields.io/github/release/AMTOPA/Navigation-page-for-bookmarks.svg)](https://github.com/AMTOPA/Navigation-page-for-bookmarks/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://www.microsoft.com/windows)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/AMTOPA/Navigation-page-for-bookmarks/graphs/commit-activity)
+[![Blog](https://img.shields.io/badge/📖_My_Blog-math--enthusiast.top-FF5733)](https://math-enthusiast.top/)
 
-
----
-
-## 使用效果
-
-![本地路径](pic/6.png "示例图片")
-
-![本地路径](pic/search.png "示例图片")
+A beautiful and functional navigation page for Edge browser bookmarks with AI-powered categorization.
 
 ---
 
-## 使用方法
+## ✨ Features
 
-1. 首先安装所需要的库，双击requirements.bat即可进行安装。
+- 🧠 AI-powered bookmark categorization
+- 🎨 Clean and aesthetic UI design
+- ⚡ Quick access to frequently used sites
+- 🔄 Automatic detection of new bookmarks
+- 🌐 Automatic favicon fetching
 
-![](pic/1.png "安装库示例")
+## 🖼️ Preview
 
-2.去[智谱AI开放平台](https://www.bigmodel.cn/usercenter/proj-mgmt/apikeys)申请一个apikey
+![Main Interface](pic/6.png "Main Interface")
+![Search Function](pic/search.png "Search Feature")
 
-申请流程：注册账号并登录-->再次访问上述链接-->按照下图所示申请即可（本程序使用的为免费的模型）
+---
 
-![本地路径](pic/2.png)
+## 🛠️ Usage Guide
 
-3.从edge浏览器导出收藏夹
+### 1. Install Dependencies
+Run `requirements.bat` to automatically install required Python libraries:
+![Install Dependencies](pic/1.png)
 
-**首先**在浏览器输入：edge://favorites
+### 2. Get API Key
+Apply for a free API key at [Zhipu AI Platform](https://www.bigmodel.cn/usercenter/proj-mgmt/apikeys):
+![API Application](pic/2.png)
 
-![](pic/3.png "示例图片")
+### 3. Export Edge Bookmarks
+1. Enter `edge://favorites` in Edge address bar
+2. Click "Export bookmarks" in top-right corner
+![Export Bookmarks](pic/3.png)
 
-**然后**点击右上角导出收藏夹。
+### 4. Run Main Program
+1. Copy the exported HTML file to project folder and rename to `bookmarks.html`
+2. Double-click `run.bat`
+3. Enter your API key when prompted (first run only):
+![Enter API Key](pic/4.png)
+4. The program will automatically:
+   - Extract bookmark data
+   - Perform AI categorization
+   - Fetch website favicons
+![Processing Steps](pic/5.png)
 
-4.执行主程序
+### 5. Launch Web Interface
+Run `web-ui.bat` to open the navigation page:
+![Final Result](pic/6.png)
 
-将导出的html复制到Navigation page for bookmarks文件夹下，并重命名为bookmarks.html。双击run.bat
+---
 
-首次使用需要输入申请的API秘钥：
+## 🔄 Subsequent Usage
 
-![本地路径](pic/4.png "示例图片")
+- New bookmarks will be automatically detected and processed
+- Hash comparison prevents duplicate processing
+![Update Detection](pic/new.png)
 
-然后程序会分三步执行：提取json文件-->调用ai分类-->获取网页图标
+> ⚠️ Note: Currently bookmark deletion requires manual operation (auto-sync coming in future versions)
 
-![本地路径](pic/5.png "示例图片")
+## 📜 License
 
-5.打开web-ui页面
-
-最后双击web-ui.bat即可自动打开
-
-![本地路径](pic/6.png "示例图片")
-
-## 后续使用
-
-如果有增加的标签，程序会自动对比哈希值，减去重复调用api等步骤，减少资源的浪费。
-
-![本地路径](pic/new.png "示例图片")
-
-如果想要删除某个网页，需要手动删除。（后续可能会改为自动删除）
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
