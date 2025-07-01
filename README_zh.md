@@ -1,5 +1,6 @@
-<div align="center"><h1>书签导航页面 🌐🔖</h1></div>
-<div align="center">简体中文  |  <a href="README.md">ENGLISH</a></div>
+<div align="center"><h1>书签导航页面 🌐🔖</h1>
+  
+简体中文  |  <a href="README.md">ENGLISH</a>
 
 [![GitHub release](https://img.shields.io/github/release/AMTOPA/Navigation-page-for-bookmarks.svg)](https://github.com/AMTOPA/Navigation-page-for-bookmarks/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -7,6 +8,8 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/AMTOPA/Navigation-page-for-bookmarks/graphs/commit-activity)
 [![Blog](https://img.shields.io/badge/📖_我的博客-math--enthusiast.top-FF5733)](https://math-enthusiast.top/)
 
+</div>
+  
 为Edge浏览器收藏夹创建美观实用的导航页面，利用AI智能分类您的书签。
 
 ---

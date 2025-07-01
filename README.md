@@ -1,12 +1,14 @@
-<div align="center"><h1>Navigation Page for Bookmarks 🌐🔖</h1></div>
+<div align="center"><h1>Navigation Page for Bookmarks 🌐🔖</h1>
 
-<div align="center"><a href="README_zh.md">简体中文</a>  |  ENGLISH</div>
+<a href="README_zh.md">简体中文</a>  |  ENGLISH
 
 [![GitHub release](https://img.shields.io/github/release/AMTOPA/Navigation-page-for-bookmarks.svg)](https://github.com/AMTOPA/Navigation-page-for-bookmarks/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://www.microsoft.com/windows)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/AMTOPA/Navigation-page-for-bookmarks/graphs/commit-activity)
 [![Blog](https://img.shields.io/badge/📖_My_Blog-math--enthusiast.top-FF5733)](https://math-enthusiast.top/)
+
+</div>
 
 A beautiful and functional navigation page for Edge browser bookmarks with AI-powered categorization.
 
@@ -75,6 +77,8 @@ Run `web-ui.bat` to open the navigation page:
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+
+
 
 
 
