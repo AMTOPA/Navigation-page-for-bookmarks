@@ -2,15 +2,15 @@ import hashlib
 import json
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from .ai_service import get_routed_model, stream_chat_completion
+from .ai_service import ensure_legacy_provider, get_routed_model, stream_chat_completion
 from .db import SessionLocal, get_db
-from .models import AISearchCache, Bookmark, Job, JobBatch, utcnow
+from .models import AIModel, AIProvider, AIRoute, AISearchCache, Bookmark, Job, JobBatch, utcnow
 from .schemas import AISearchRequest
 from .search_service import current_index_revision, hybrid_search, search_status
 from .security import require_read, require_session, require_session_write
@@ -18,6 +18,55 @@ from .services import create_job_batch, queue_job
 
 
 router = APIRouter(prefix="/api")
+
+
+def _select_ai_search_model(db: Session, model_id: str | None = None) -> tuple[AIProvider, AIModel]:
+    if not model_id:
+        return get_routed_model(db, "ai_search")
+    model = db.scalar(
+        select(AIModel)
+        .where(AIModel.id == model_id)
+        .options(selectinload(AIModel.provider))
+    )
+    if (
+        not model
+        or not model.enabled
+        or not model.provider
+        or not model.provider.enabled
+        or "chat" not in (model.capabilities or [])
+    ):
+        raise HTTPException(400, "所选 AI 搜索模型不可用")
+    return model.provider, model
+
+
+@router.get("/ai-search/models")
+def ai_search_models(
+    _principal: dict = Depends(require_read),
+    db: Session = Depends(get_db),
+):
+    ensure_legacy_provider(db)
+    default_route = db.get(AIRoute, "ai_search")
+    models = db.scalars(
+        select(AIModel)
+        .join(AIProvider)
+        .where(AIModel.enabled.is_(True), AIProvider.enabled.is_(True))
+        .options(selectinload(AIModel.provider))
+        .order_by(AIProvider.name, AIModel.display_name)
+    ).all()
+    return {
+        "default_model_id": default_route.model_id if default_route else None,
+        "models": [
+            {
+                "id": model.id,
+                "display_name": model.display_name or model.model_name,
+                "model_name": model.model_name,
+                "provider_name": model.provider.name,
+                "is_default": bool(default_route and default_route.model_id == model.id),
+            }
+            for model in models
+            if "chat" in (model.capabilities or [])
+        ],
+    }
 
 
 @router.get("/search")
@@ -58,7 +107,7 @@ def ai_search_stream(
     _principal: dict = Depends(require_read),
     db: Session = Depends(get_db),
 ):
-    provider, model = get_routed_model(db, "ai_search")
+    provider, model = _select_ai_search_model(db, payload.model_id)
     try:
         _embedding_provider, embedding_model = get_routed_model(db, "embedding")
         embedding_id = embedding_model.id

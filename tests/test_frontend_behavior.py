@@ -39,3 +39,20 @@ def test_search_style_control_stays_outside_collapsible_panel():
     select_position = html.index('id="searchBarMode"')
     assert select_position < control_start or select_position > control_end
     assert 'id="groupRailToggle"' in html
+
+
+def test_navigation_has_ai_model_floating_window_and_delete_controls():
+    html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
+    nav = (ROOT / "frontend/assets/nav.js").read_text(encoding="utf-8")
+    css = (ROOT / "frontend/assets/style.css").read_text(encoding="utf-8")
+    assert 'id="aiModel"' in html
+    assert '<option value="floating">浮动窗口</option>' in html
+    assert 'id="aiMinimize"' in html
+    assert 'data-delete="${item.id}"' in nav
+    assert 'confirmAction({' in nav
+    assert 'method: "DELETE"' in nav
+    assert 'method: "POST"' in nav
+    assert "groupPositionObserver.disconnect()" in nav
+    assert "window.scrollTo({top:" in nav
+    assert "prefers-reduced-motion" in css
+    assert ".group-outline.collapsed .group-rail" in css

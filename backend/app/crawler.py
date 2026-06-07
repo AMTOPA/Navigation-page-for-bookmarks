@@ -1,5 +1,6 @@
 import hashlib
 import ipaddress
+import re
 import socket
 from io import BytesIO
 from urllib.parse import urljoin, urlsplit
@@ -7,12 +8,32 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 import trafilatura
 from bs4 import BeautifulSoup
+from charset_normalizer import from_bytes
 from pypdf import PdfReader
 
 from .config import get_settings
 
 
 USER_AGENT = "EdgeBookmarkNavigator/2.0 (+private bookmark metadata fetcher)"
+CHARSET_PATTERN = re.compile(
+    br"""charset\s*=\s*["']?\s*([a-zA-Z0-9._:+-]+)""",
+    re.IGNORECASE,
+)
+MOJIBAKE_MARKERS = (
+    "\u951f\u65a4\u62f7",
+    "\u9428\u52e3",
+    "\u9225",
+    "\u9286",
+    "\u93c0\u60f0\u68cc",
+    "\u93bc\u6ec5\u50a8",
+    "\u95be\u70ac\u5e34",
+    "\u9983",
+    "\u00c3",
+    "\u00c2",
+    "\u00e2\u20ac",
+    "\u00e4\u00b8",
+    "\ufffd",
+)
 
 
 def validate_public_url(url: str) -> tuple[str, str]:
@@ -77,8 +98,54 @@ def extract_pdf(content: bytes) -> dict:
     }
 
 
-def extract_html(content: bytes, final_url: str) -> dict:
-    soup = BeautifulSoup(content, "html.parser")
+def _charset_candidates(content: bytes, content_type: str = "") -> list[str]:
+    candidates = []
+    header_match = CHARSET_PATTERN.search(content_type.encode("ascii", errors="ignore"))
+    meta_match = CHARSET_PATTERN.search(content[:8192])
+    if content.startswith(b"\xef\xbb\xbf"):
+        candidates.append("utf-8-sig")
+    elif content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        candidates.append("utf-16")
+    candidates.append("utf-8")
+    if header_match:
+        candidates.append(header_match.group(1).decode("ascii", errors="ignore"))
+    if meta_match:
+        candidates.append(meta_match.group(1).decode("ascii", errors="ignore"))
+    detected = from_bytes(content).best()
+    if detected and detected.encoding:
+        candidates.append(detected.encoding)
+    candidates.extend(("gb18030", "big5", "windows-1252"))
+    return list(dict.fromkeys(value.strip().lower() for value in candidates if value.strip()))
+
+
+def _decoded_text_score(text: str, position: int) -> float:
+    if not text:
+        return -10_000
+    controls = sum(ord(char) < 32 and char not in "\n\r\t" for char in text)
+    suspicious = sum(text.count(marker) for marker in MOJIBAKE_MARKERS)
+    printable = sum(char.isprintable() or char in "\n\r\t" for char in text) / len(text)
+    # Candidate order is meaningful, but clean text always wins over a declared
+    # charset that produces mojibake.
+    return printable * 100 - controls * 8 - suspicious * 20 - position * 0.05
+
+
+def decode_html(content: bytes, content_type: str = "") -> tuple[str, str]:
+    decoded = []
+    for position, encoding in enumerate(_charset_candidates(content, content_type)):
+        try:
+            text = content.decode(encoding, errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            continue
+        decoded.append((_decoded_text_score(text, position), text, encoding))
+    if not decoded:
+        return content.decode("utf-8", errors="replace"), "utf-8-replace"
+    _, text, encoding = max(decoded, key=lambda item: item[0])
+    return text, encoding
+
+
+def extract_html(content: bytes, final_url: str, content_type: str = "") -> dict:
+    text_value, encoding = decode_html(content, content_type)
+    soup = BeautifulSoup(text_value, "html.parser")
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
     description_tag = soup.find("meta", attrs={"name": lambda value: value and value.lower() == "description"})
     if not description_tag:
@@ -88,7 +155,6 @@ def extract_html(content: bytes, final_url: str) -> dict:
     favicon = urljoin(final_url, icon.get("href", "")) if icon and icon.get("href") else ""
     image_tag = soup.find("meta", property="og:image")
     image = urljoin(final_url, image_tag.get("content", "")) if image_tag and image_tag.get("content") else ""
-    text_value = content.decode(soup.original_encoding or "utf-8", errors="replace")
     extracted = trafilatura.extract(text_value, include_links=True, include_formatting=False) or ""
     headings = [
         heading.get_text(" ", strip=True)
@@ -102,6 +168,7 @@ def extract_html(content: bytes, final_url: str) -> dict:
         "image": image,
         "text": extracted[:250_000],
         "outline": headings,
+        "encoding": encoding,
     }
 
 
@@ -115,7 +182,7 @@ def crawl_url(url: str, etag: str = "", last_modified: str = "") -> dict:
     if "pdf" in content_type or response.url.path.lower().endswith(".pdf"):
         result = extract_pdf(response.content)
     elif "html" in content_type or not content_type:
-        result = extract_html(response.content, str(response.url))
+        result = extract_html(response.content, str(response.url), content_type)
     else:
         raise ValueError(f"不支持的内容类型：{content_type}")
     result.update(

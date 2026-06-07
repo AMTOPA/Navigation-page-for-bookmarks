@@ -43,13 +43,20 @@
         <button id="editMode" class="button secondary">开启编辑</button>
       </div>
       <div id="searchStatus" class="search-status" hidden></div>
-      <section id="aiSearchPanel" class="ai-search-panel" hidden>
-        <div class="ai-panel-head"><div><strong>AI 搜索助手</strong><span id="aiModelHint">先检索收藏，再由快速模型帮助缩小范围</span></div><label>布局<select id="aiLayout"><option value="drawer">右侧抽屉</option><option value="inline">搜索栏下方</option></select></label></div>
-        <textarea id="aiContext" rows="2" placeholder="可选：补充你还记得的用途、页面内容、时间或关键词"></textarea>
-        <div class="ai-actions"><button class="button" id="askAi" type="button">询问 AI</button><button class="button ghost" id="stopAi" type="button" disabled>停止</button></div>
-        <div id="aiSuggestions" class="suggestion-list"></div>
-        <div id="aiAnswer" class="ai-answer muted">输入大概内容后点击“询问 AI”。</div>
-      </section>
+    </section>
+    <section id="aiSearchPanel" class="ai-search-panel" hidden>
+      <div class="ai-panel-head" id="aiPanelHandle">
+        <div><strong>AI 搜索助手</strong><span id="aiModelHint">先检索收藏，再由所选模型帮助缩小范围</span></div>
+        <div class="ai-panel-controls">
+          <label>模型<select id="aiModel" aria-label="AI 搜索模型"><option value="">正在加载…</option></select></label>
+          <label>布局<select id="aiLayout"><option value="floating">浮动窗口</option><option value="inline">搜索栏下方</option></select></label>
+          <button id="aiMinimize" class="ai-window-button" type="button" title="最小化 AI 窗口" aria-label="最小化 AI 窗口">−</button>
+        </div>
+      </div>
+      <textarea id="aiContext" rows="2" placeholder="可选：补充你还记得的用途、页面内容、时间或关键词"></textarea>
+      <div class="ai-actions"><button class="button" id="askAi" type="button">询问 AI</button><button class="button ghost" id="stopAi" type="button" disabled>停止</button></div>
+      <div id="aiSuggestions" class="suggestion-list"></div>
+      <div id="aiAnswer" class="ai-answer muted">输入大概内容后点击“询问 AI”。</div>
     </section>
     <button id="searchOrb" class="search-orb" type="button" aria-label="展开搜索">⌕</button>
     <div id="dragNotice" class="notice" hidden>分类拖拽只在“AI/手动分类”分组下可用。</div>

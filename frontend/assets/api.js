@@ -64,7 +64,7 @@ function initTheme() {
   });
 }
 
-function toast(message, type = "success", duration = type === "success" ? 3000 : 6000) {
+function toast(message, type = "success", duration = type === "success" ? 3000 : 6000, action = null) {
   let root = document.getElementById("toastRoot");
   if (!root) {
     root = document.createElement("div");
@@ -74,13 +74,23 @@ function toast(message, type = "success", duration = type === "success" ? 3000 :
   }
   const item = document.createElement("div");
   item.className = `toast ${type}`;
-  item.innerHTML = `<span>${escapeHtml(message)}</span><button aria-label="关闭">×</button>`;
+  item.innerHTML = `<span>${escapeHtml(message)}</span><div class="toast-actions">${
+    action ? `<button class="toast-action" type="button">${escapeHtml(action.label)}</button>` : ""
+  }<button class="toast-close" aria-label="关闭">×</button></div>`;
   root.append(item);
   const close = () => {
     item.classList.add("leaving");
     setTimeout(() => item.remove(), 180);
   };
-  item.querySelector("button").addEventListener("click", close);
+  item.querySelector(".toast-close").addEventListener("click", close);
+  item.querySelector(".toast-action")?.addEventListener("click", async () => {
+    try {
+      await action.run();
+      close();
+    } catch (error) {
+      toast(error.message, "error");
+    }
+  });
   if (duration) setTimeout(close, duration);
 }
 

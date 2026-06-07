@@ -6,6 +6,12 @@ let searchTimer = null;
 let searchSequence = 0;
 let aiController = null;
 let groupObserver = null;
+let groupPositionObserver = null;
+let groupPositionFrame = 0;
+let programmaticGroup = "";
+let programmaticGroupTimer = null;
+let aiModels = [];
+let aiPanelResizeObserver = null;
 const groupItems = new Map();
 const preferences = {
   groupBy: localStorage.getItem("groupBy") || "category",
@@ -13,7 +19,8 @@ const preferences = {
   direction: localStorage.getItem("direction") || "desc",
   searchMode: localStorage.getItem("searchMode") || "off",
   searchBarMode: localStorage.getItem("searchBarMode") || "embedded",
-  aiLayout: localStorage.getItem("aiLayout") || "drawer"
+  aiLayout: localStorage.getItem("aiLayout") === "inline" ? "inline" : "floating",
+  aiModelId: localStorage.getItem("aiSearchModel") || ""
 };
 let groupRailCollapsed = localStorage.getItem("groupRailCollapsed") === "true";
 const importanceOrder = {high: 4, medium: 3, normal: 2, low: 1};
@@ -177,7 +184,7 @@ function renderGroupRail(groups) {
     `<button type="button" data-jump="${hashName(name)}" title="${escapeHtml(name)}">${escapeHtml(name)}<small>${items.length}</small></button>`
   ).join("");
   rail.querySelectorAll("[data-jump]").forEach(button => button.addEventListener("click", () => {
-    document.getElementById(`group-${button.dataset.jump}`)?.scrollIntoView({behavior: "smooth", block: "start"});
+    jumpToGroup(button.dataset.jump);
   }));
   outline.hidden = groups.length === 0;
   applyGroupRailState();
@@ -194,16 +201,73 @@ function applyGroupRailState() {
 }
 
 function observeCurrentGroup() {
+  if (groupPositionObserver) groupPositionObserver.disconnect();
   const groups = [...document.querySelectorAll(".group")];
   if (!groups.length) return;
-  const observer = new IntersectionObserver(entries => {
-    const current = entries.find(entry => entry.isIntersecting);
-    if (!current) return;
-    document.querySelectorAll(".group-rail button").forEach(button =>
-      button.classList.toggle("active", button.dataset.jump === current.target.id.replace("group-", ""))
-    );
-  }, {rootMargin: "-20% 0px -70% 0px"});
-  groups.forEach(group => observer.observe(group));
+  groupPositionObserver = new IntersectionObserver(scheduleActiveGroup, {
+    rootMargin: "-8% 0px -82% 0px",
+    threshold: [0, 0.01, 1]
+  });
+  groups.forEach(group => groupPositionObserver.observe(group));
+  scheduleActiveGroup();
+}
+
+function groupScrollOffset() {
+  const topbar = document.querySelector(".topbar")?.getBoundingClientRect().height || 0;
+  const control = document.getElementById("controlPanel");
+  const stickyControl = preferences.searchBarMode === "compact" && control && !control.hidden
+    ? control.getBoundingClientRect().height + 8
+    : 0;
+  return topbar + stickyControl + 14;
+}
+
+function setActiveGroup(groupId) {
+  document.querySelectorAll(".group-rail button").forEach(button =>
+    button.classList.toggle("active", button.dataset.jump === groupId)
+  );
+  document.querySelector(`.group-rail button[data-jump="${groupId}"]`)?.scrollIntoView({
+    block: "nearest"
+  });
+}
+
+function updateActiveGroup() {
+  groupPositionFrame = 0;
+  if (programmaticGroup) {
+    setActiveGroup(programmaticGroup);
+    return;
+  }
+  const groups = [...document.querySelectorAll(".group")];
+  if (!groups.length) return;
+  const anchor = groupScrollOffset() + 8;
+  let current = groups[0];
+  for (const group of groups) {
+    if (group.getBoundingClientRect().top <= anchor) current = group;
+    else break;
+  }
+  setActiveGroup(current.id.replace("group-", ""));
+}
+
+function scheduleActiveGroup() {
+  if (!groupPositionFrame) groupPositionFrame = requestAnimationFrame(updateActiveGroup);
+}
+
+function finishProgrammaticGroup() {
+  clearTimeout(programmaticGroupTimer);
+  programmaticGroup = "";
+  scheduleActiveGroup();
+}
+
+function jumpToGroup(groupId) {
+  const target = document.getElementById(`group-${groupId}`);
+  if (!target) return;
+  const grid = target.querySelector(".lazy-grid");
+  if (grid) populateGroup(grid);
+  programmaticGroup = groupId;
+  setActiveGroup(groupId);
+  clearTimeout(programmaticGroupTimer);
+  const top = window.scrollY + target.getBoundingClientRect().top - groupScrollOffset();
+  window.scrollTo({top: Math.max(0, top), behavior: "smooth"});
+  programmaticGroupTimer = setTimeout(finishProgrammaticGroup, 900);
 }
 
 function cardHtml(item) {
@@ -216,7 +280,10 @@ function cardHtml(item) {
       <p>${escapeHtml(item.description || item.summary || item.url)}</p>
       <div class="tags">${(item.tags || []).slice(0,5).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}${item.local_copy_url ? '<span class="tag">服务器副本</span>' : ""}</div>
     </div>
-    <button class="button secondary edit-card" data-edit="${item.id}">编辑</button>
+    <div class="card-actions">
+      <button class="button secondary edit-card" data-edit="${item.id}">编辑</button>
+      <button class="button danger delete-card" data-delete="${item.id}">删除</button>
+    </div>
     ${openLink}
   </article>`;
 }
@@ -237,9 +304,52 @@ function bindCards(root = document) {
       openEditor(button.dataset.edit);
     });
   });
+  root.querySelectorAll("[data-delete]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteBookmark(button.dataset.delete);
+    });
+  });
+  root.querySelectorAll(".favicon").forEach(image => {
+    image.addEventListener("load", scheduleActiveGroup, {once: true});
+  });
   root.querySelectorAll(".card[draggable=true]").forEach(card => {
     card.addEventListener("dragstart", event => event.dataTransfer.setData("text/plain", card.dataset.id));
   });
+}
+
+async function deleteBookmark(id) {
+  const item = bookmarks.find(value => value.id === id);
+  if (!item) return;
+  const confirmed = await confirmAction({
+    title: "删除收藏",
+    message: `“${item.title || item.url}”将被软删除，可以立即撤销或稍后在后台恢复。`,
+    confirmText: "删除",
+    danger: true
+  });
+  if (!confirmed) return;
+  try {
+    await api(`/api/bookmarks/${id}`, {method: "DELETE"});
+    bookmarks = bookmarks.filter(value => value.id !== id);
+    visibleBookmarks = visibleBookmarks.filter(value => value.id !== id);
+    refreshGroupFilter();
+    render();
+    await writeSnapshotCache({etag: "", data: {items: bookmarks}});
+    toast("收藏已删除", "success", 8000, {
+      label: "撤销",
+      run: async () => {
+        await api(`/api/bookmarks/${id}/restore`, {method: "POST"});
+        bookmarks.unshift(item);
+        runLocalSearch();
+        refreshGroupFilter();
+        await writeSnapshotCache({etag: "", data: {items: bookmarks}});
+        toast("收藏已恢复");
+      }
+    });
+  } catch (error) {
+    toast(error.message, "error");
+  }
 }
 
 function bindGroupDrops() {
@@ -380,7 +490,8 @@ function setSearchMode(mode) {
   );
   const panel = document.getElementById("aiSearchPanel");
   panel.hidden = mode !== "ai";
-  document.body.classList.toggle("ai-drawer-open", mode === "ai" && preferences.aiLayout === "drawer");
+  document.body.classList.toggle("ai-floating-open", mode === "ai" && preferences.aiLayout === "floating");
+  if (mode === "ai") restoreAiPanelGeometry();
   runSearch();
 }
 
@@ -390,6 +501,7 @@ function applySearchBarMode(mode) {
   document.getElementById("searchBarMode").value = mode;
   document.body.dataset.searchBar = mode;
   document.getElementById("searchOrb").hidden = mode !== "circle";
+  scheduleActiveGroup();
 }
 
 function applyAiLayout(layout) {
@@ -397,7 +509,119 @@ function applyAiLayout(layout) {
   localStorage.setItem("aiLayout", layout);
   document.getElementById("aiLayout").value = layout;
   document.body.dataset.aiLayout = layout;
-  document.body.classList.toggle("ai-drawer-open", preferences.searchMode === "ai" && layout === "drawer");
+  document.body.classList.toggle("ai-floating-open", preferences.searchMode === "ai" && layout === "floating");
+  document.getElementById("aiSearchPanel").classList.remove("minimized");
+  document.getElementById("aiMinimize").textContent = "−";
+  if (layout === "floating") restoreAiPanelGeometry();
+}
+
+async function loadAiModels() {
+  const select = document.getElementById("aiModel");
+  try {
+    const data = await api("/api/ai-search/models");
+    aiModels = data.models || [];
+    const available = new Set(aiModels.map(model => model.id));
+    const selected = available.has(preferences.aiModelId)
+      ? preferences.aiModelId
+      : (available.has(data.default_model_id) ? data.default_model_id : aiModels[0]?.id || "");
+    preferences.aiModelId = selected;
+    if (selected) localStorage.setItem("aiSearchModel", selected);
+    else localStorage.removeItem("aiSearchModel");
+    select.innerHTML = aiModels.length
+      ? aiModels.map(model => `<option value="${model.id}">${escapeHtml(model.provider_name)} · ${escapeHtml(model.display_name)}${model.is_default ? "（默认）" : ""}</option>`).join("")
+      : '<option value="">没有可用模型</option>';
+    select.value = selected;
+    select.disabled = !aiModels.length;
+  } catch (error) {
+    select.innerHTML = '<option value="">模型加载失败</option>';
+    select.disabled = true;
+    toast(error.message, "error");
+  }
+}
+
+function restoreAiPanelGeometry() {
+  const panel = document.getElementById("aiSearchPanel");
+  if (preferences.aiLayout !== "floating" || window.innerWidth <= 850) {
+    panel.style.removeProperty("left");
+    panel.style.removeProperty("top");
+    panel.style.removeProperty("width");
+    panel.style.removeProperty("height");
+    return;
+  }
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem("aiPanelGeometry") || "{}");
+  } catch {
+    localStorage.removeItem("aiPanelGeometry");
+  }
+  const width = Math.min(Math.max(saved.width || 760, 520), window.innerWidth - 32);
+  const height = Math.min(Math.max(saved.height || Math.round(window.innerHeight * 0.7), 360), window.innerHeight - 32);
+  const left = Math.min(Math.max(saved.left ?? window.innerWidth - width - 24, 16), window.innerWidth - width - 16);
+  const top = Math.min(Math.max(saved.top ?? 92, 16), window.innerHeight - height - 16);
+  Object.assign(panel.style, {left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`});
+}
+
+function saveAiPanelGeometry() {
+  if (preferences.aiLayout !== "floating" || window.innerWidth <= 850) return;
+  const rect = document.getElementById("aiSearchPanel").getBoundingClientRect();
+  if (rect.width < 300 || rect.height < 200) return;
+  localStorage.setItem("aiPanelGeometry", JSON.stringify({
+    left: Math.round(rect.left),
+    top: Math.round(rect.top),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  }));
+}
+
+function initAiFloatingWindow() {
+  const panel = document.getElementById("aiSearchPanel");
+  const handle = document.getElementById("aiPanelHandle");
+  handle.addEventListener("pointerdown", event => {
+    if (
+      preferences.aiLayout !== "floating"
+      || window.innerWidth <= 850
+      || event.target.closest("button, select, label")
+    ) return;
+    const rect = panel.getBoundingClientRect();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    handle.setPointerCapture(event.pointerId);
+    panel.classList.add("dragging");
+    const move = moveEvent => {
+      const left = Math.min(
+        Math.max(rect.left + moveEvent.clientX - startX, 8),
+        window.innerWidth - panel.offsetWidth - 8
+      );
+      const top = Math.min(
+        Math.max(rect.top + moveEvent.clientY - startY, 8),
+        window.innerHeight - 72
+      );
+      panel.style.left = `${left}px`;
+      panel.style.top = `${top}px`;
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      panel.classList.remove("dragging");
+      saveAiPanelGeometry();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
+  document.getElementById("aiMinimize").addEventListener("click", () => {
+    panel.classList.toggle("minimized");
+    document.getElementById("aiMinimize").textContent = panel.classList.contains("minimized") ? "+" : "−";
+  });
+  if ("ResizeObserver" in window) {
+    aiPanelResizeObserver = new ResizeObserver(() => {
+      clearTimeout(aiPanelResizeObserver.saveTimer);
+      aiPanelResizeObserver.saveTimer = setTimeout(saveAiPanelGeometry, 150);
+    });
+    aiPanelResizeObserver.observe(panel);
+  }
+  window.addEventListener("resize", restoreAiPanelGeometry);
 }
 
 function parseSseChunk(buffer, onEvent) {
@@ -427,18 +651,29 @@ async function askAi() {
   askButton.disabled = true;
   stopButton.disabled = false;
   try {
-    const response = await fetch("/api/ai-search/stream", {
+    const requestPayload = {
+      query,
+      context: document.getElementById("aiContext").value,
+      model_id: document.getElementById("aiModel").value || null,
+      group_by: ["category", "folder", "importance"].includes(preferences.groupBy) ? preferences.groupBy : "",
+      group: ["category", "folder", "importance"].includes(preferences.groupBy) ? document.getElementById("groupFilter").value : "",
+      limit: 30
+    };
+    const request = () => fetch("/api/ai-search/stream", {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
-      body: JSON.stringify({
-        query,
-        context: document.getElementById("aiContext").value,
-        group_by: ["category", "folder", "importance"].includes(preferences.groupBy) ? preferences.groupBy : "",
-        group: ["category", "folder", "importance"].includes(preferences.groupBy) ? document.getElementById("groupFilter").value : "",
-        limit: 30
-      }),
+      body: JSON.stringify(requestPayload),
       signal: aiController.signal
     });
+    let response = await request();
+    if (response.status === 400 && requestPayload.model_id) {
+      requestPayload.model_id = null;
+      preferences.aiModelId = "";
+      localStorage.removeItem("aiSearchModel");
+      await loadAiModels();
+      toast("所选模型已不可用，已回退到默认模型", "error");
+      response = await request();
+    }
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.detail || `AI 搜索失败：${response.status}`);
@@ -488,6 +723,8 @@ function bindSuggestions() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   await ensureSession();
+  window.addEventListener("scroll", scheduleActiveGroup, {passive: true});
+  window.addEventListener("scrollend", finishProgrammaticGroup);
   for (const key of ["groupBy", "sortBy", "direction"]) {
     document.getElementById(key).value = preferences[key];
     document.getElementById(key).addEventListener("change", event => {
@@ -518,6 +755,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("search").focus();
   });
   document.getElementById("aiLayout").addEventListener("change", event => applyAiLayout(event.target.value));
+  document.getElementById("aiModel").addEventListener("change", event => {
+    preferences.aiModelId = event.target.value;
+    localStorage.setItem("aiSearchModel", event.target.value);
+  });
   document.getElementById("askAi").addEventListener("click", askAi);
   document.getElementById("stopAi").addEventListener("click", () => aiController?.abort());
   document.getElementById("editMode").addEventListener("click", event => {
@@ -563,6 +804,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   applySearchBarMode(preferences.searchBarMode);
   applyAiLayout(preferences.aiLayout);
+  initAiFloatingWindow();
+  await loadAiModels();
   setSearchMode(preferences.searchMode);
   try {
     await load();

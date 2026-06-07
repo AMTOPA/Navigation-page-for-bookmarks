@@ -190,6 +190,7 @@ class EdgeSyncRequest(BaseModel):
 class AISearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     context: str = Field(default="", max_length=2000)
+    model_id: str | None = None
     group_by: Literal["", "category", "folder", "importance"] = ""
     group: str = Field(default="", max_length=300)
     limit: int = Field(default=20, ge=1, le=50)
