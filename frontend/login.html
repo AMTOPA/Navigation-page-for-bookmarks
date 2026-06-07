@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dashboard">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>登录 - 收藏导航</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-hero">
+      <span class="eyebrow">PRIVATE BOOKMARK SPACE</span>
+      <h1>把散落的收藏，变成随时可检索的知识入口。</h1>
+      <p>分类、摘要、同步和智能搜索都在一个安静的工作台里。</p>
+      <div class="hero-orbit"><span></span><span></span><span></span></div>
+    </section>
+    <form class="login-card stack" id="loginForm">
+      <div>
+        <span class="eyebrow">欢迎回来</span>
+        <h2>登录收藏导航</h2>
+        <p class="muted">使用管理员账号访问导航页与后台。</p>
+      </div>
+      <label class="field"><span>用户名</span><input class="input" name="username" autocomplete="username" required autofocus></label>
+      <label class="field"><span>密码</span><div class="password-field"><input class="input" type="password" name="password" autocomplete="current-password" required><button type="button" data-toggle-password>显示</button></div></label>
+      <button class="button wide" type="submit">登录</button>
+      <div class="message" id="message" role="alert"></div>
+      <label class="theme-inline">界面主题
+        <select data-theme-select><option value="dashboard">现代仪表盘</option><option value="glass">玻璃科技</option><option value="compact">极简密集</option></select>
+      </label>
+    </form>
+  </main>
+  <div id="toastRoot" class="toast-root"></div>
+  <script src="/assets/api.js"></script>
+  <script>
+    document.querySelector("[data-toggle-password]").addEventListener("click", event => {
+      const input = document.querySelector('[name="password"]');
+      input.type = input.type === "password" ? "text" : "password";
+      event.target.textContent = input.type === "password" ? "显示" : "隐藏";
+    });
+    document.getElementById("loginForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const button = event.submitter;
+      const message = document.getElementById("message");
+      message.textContent = "";
+      button.disabled = true;
+      button.textContent = "正在登录…";
+      try {
+        const response = await api("/api/auth/login", {method:"POST", body:Object.fromEntries(new FormData(event.target))});
+        sessionStorage.setItem("csrfToken", response.csrf_token);
+        location.href = "/";
+      } catch (error) {
+        message.textContent = error.message;
+      } finally {
+        button.disabled = false;
+        button.textContent = "登录";
+      }
+    });
+  </script>
+</body>
+</html>

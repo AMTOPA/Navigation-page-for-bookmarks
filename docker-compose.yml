@@ -1,0 +1,33 @@
+name: edge-bookmark-navigator
+
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:8765:8000"
+    volumes:
+      - bookmark_data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Shanghai
+    command: ["sh", "-c", "alembic -c alembic.ini upgrade head && python -m app.worker"]
+    volumes:
+      - bookmark_data:/app/backend/data
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  bookmark_data:

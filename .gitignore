@@ -1,0 +1,14 @@
+.env
+data/
+backend/data/
+client/sync_config.json
+client/.edge_sync_state.json
+__pycache__/
+*.pyc
+.pytest_cache/
+*.tar.gz
+*.zip
+bookmarks*.json
+bookmarks*.html
+favorites*.html
+Navigation page for bookmarks*/

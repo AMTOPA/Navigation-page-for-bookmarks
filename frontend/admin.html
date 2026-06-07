@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dashboard">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>后台管理 - 收藏导航</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body class="admin-page">
+  <aside class="admin-sidebar" id="adminSidebar">
+    <a class="brand" href="/"><span class="brand-mark">N</span><span>收藏导航</span></a>
+    <nav>
+      <button class="nav-item active" data-tab="bookmarks">收藏管理</button>
+      <button class="nav-item" data-tab="import">导入与同步</button>
+      <button class="nav-item" data-tab="models">AI 模型</button>
+      <button class="nav-item" data-tab="search">搜索索引</button>
+      <button class="nav-item" data-tab="jobs">任务中心</button>
+      <button class="nav-item" data-tab="logs">系统日志</button>
+      <button class="nav-item" data-tab="account">账号安全</button>
+    </nav>
+    <div class="sidebar-foot">
+      <label>主题<select data-theme-select><option value="dashboard">现代仪表盘</option><option value="glass">玻璃科技</option><option value="compact">极简密集</option></select></label>
+      <a class="button secondary wide" href="/">返回导航</a>
+      <button class="button ghost wide" onclick="logout()">退出登录</button>
+    </div>
+  </aside>
+  <div class="admin-main">
+    <header class="admin-header">
+      <button class="icon-button mobile-only" id="menuButton">菜单</button>
+      <div><span class="eyebrow">ADMIN CONSOLE</span><h1 id="sectionTitle">收藏管理</h1></div>
+      <button class="icon-button" data-show-progress>显示进度</button>
+    </header>
+    <aside class="progress-widget admin-progress" id="progressWidget">
+      <div><strong data-progress-name>后台任务</strong><span data-progress-detail></span></div>
+      <div class="progress-track"><span data-progress-bar></span></div>
+      <button data-progress-hide>×</button>
+    </aside>
+    <main class="admin-content">
+      <section id="tab-bookmarks" class="tab-content active">
+        <div class="section-toolbar"><div class="search-box compact-search"><span>⌕</span><input id="adminSearch" class="input" placeholder="搜索收藏"></div><button class="button" id="adminAdd">新增</button><button class="button secondary" data-batch="crawl">批量抓取</button><button class="button secondary" data-batch="ai">批量 AI</button><button class="button secondary" data-batch="search_index">更新索引</button><button class="button danger" data-batch="delete">批量删除</button></div>
+        <div class="table-card"><table><thead><tr><th><input type="checkbox" id="selectAll"></th><th>标题</th><th>分类与标签</th><th>来源</th><th>状态</th><th>操作</th></tr></thead><tbody id="bookmarkRows"></tbody></table></div>
+        <div class="pagination" id="bookmarkPager"></div>
+      </section>
+      <section id="tab-import" class="tab-content">
+        <div class="settings-grid">
+          <article class="panel stack"><span class="eyebrow">EDGE HTML</span><h2>导入收藏文件</h2><p class="muted">保留 Edge 原始文件夹层级，相同 URL 自动合并来源。</p><form id="importForm" class="stack"><input class="input" type="file" name="upload" accept=".html,.htm" required><button class="button">开始导入</button></form><div id="importResult"></div></article>
+          <article class="panel stack"><span class="eyebrow">REMOTE ACCESS</span><h2>远程 API Token</h2><form id="tokenForm" class="stack"><input class="input" name="name" placeholder="Token 名称" required><button class="button">生成 Token</button></form><div id="tokenResult"></div><div id="tokenList"></div></article>
+        </div>
+      </section>
+      <section id="tab-models" class="tab-content">
+        <div class="model-console">
+          <section><div class="section-toolbar"><div><span class="eyebrow">PROVIDERS & MODELS</span><h2>供应商与模型</h2></div><button class="button" id="addProvider">新增供应商</button><button class="button secondary" id="addModel">新增模型</button></div><div id="providerList" class="provider-column"></div></section>
+          <article class="panel stack route-panel"><span class="eyebrow">TASK ROUTING</span><h2>任务模型路由</h2><p class="muted">不同任务可以使用不同模型。分类、摘要留空时继承默认模型；AI 搜索建议使用低延迟聊天模型。</p><form id="routeForm" class="stack"><label class="field"><span>默认生成模型</span><select name="default"></select></label><label class="field"><span>分类模型</span><select name="classification"></select></label><label class="field"><span>摘要模型</span><select name="summary"></select></label><label class="field"><span>搜索 Embedding 模型</span><select name="embedding"></select></label><label class="field"><span>AI 搜索模型</span><select name="ai_search"></select></label><div class="actions"><button class="button">保存路由</button></div></form></article>
+        </div>
+      </section>
+      <section id="tab-search" class="tab-content">
+        <div id="searchIndexStatus" class="metric-grid"></div>
+        <div class="panel"><h2>持久化搜索索引</h2><p class="muted">收藏未变化时复用已保存向量；新增或修改只更新对应记录。切换 Embedding 模型后才全量重建。</p><button class="button" id="rebuildSearch">重建全部索引</button></div>
+      </section>
+      <section id="tab-jobs" class="tab-content"><div class="section-toolbar"><select id="jobStatus"><option value="">全部状态</option><option value="queued">等待</option><option value="running">运行</option><option value="success">成功</option><option value="failed">失败</option><option value="blocked">阻塞</option></select><button class="button secondary" onclick="loadJobs()">刷新</button></div><div class="table-card"><table><thead><tr><th>类型</th><th>状态</th><th>尝试</th><th>错误</th><th>时间</th><th>操作</th></tr></thead><tbody id="jobRows"></tbody></table></div><div class="pagination" id="jobPager"></div></section>
+      <section id="tab-logs" class="tab-content"><div class="section-toolbar"><select id="logLevel"><option value="">全部级别</option><option value="info">信息</option><option value="warning">警告</option><option value="error">错误</option></select><button class="button secondary" onclick="loadLogs()">刷新</button></div><div class="table-card"><table><thead><tr><th>事件</th><th>级别</th><th>消息</th><th>详情</th><th>时间</th></tr></thead><tbody id="logRows"></tbody></table></div><div class="pagination" id="logPager"></div></section>
+      <section id="tab-account" class="tab-content"><article class="panel narrow stack"><span class="eyebrow">ACCOUNT SECURITY</span><h2>修改管理员账号</h2><p class="muted">保存后会撤销全部登录会话，需要使用新凭据重新登录。</p><form id="accountForm" class="stack"><label class="field"><span>用户名</span><input class="input" name="username" required minlength="3"></label><label class="field"><span>当前密码</span><input class="input" type="password" name="current_password" required></label><label class="field"><span>新密码（不修改可留空）</span><input class="input" type="password" name="new_password" minlength="10"></label><button class="button">更新账号</button></form></article></section>
+    </main>
+  </div>
+  <div id="adminModal" class="modal"><form id="adminForm" class="modal-card"><div class="modal-head"><h2>编辑收藏</h2><button type="button" class="modal-close" onclick="closeAdminModal()">×</button></div><input type="hidden" name="id"><div class="form-grid"><label class="field full"><span>URL <b class="required">*</b></span><input class="input" name="url" placeholder="必填：https://example.com" required></label><label class="field"><span>标题</span><input class="input" name="title" placeholder="可选：留空后自动获取"></label><label class="field"><span>分类</span><input class="input" name="category" placeholder="可选：留空后自动分类"></label><label class="field"><span>重要性</span><select name="importance"><option value="high">非常重要</option><option value="medium">比较重要</option><option value="normal">一般</option><option value="low">不重要</option></select></label><label class="field"><span>标签</span><input class="input" name="tags" placeholder="可选：逗号分隔"></label><label class="field full"><span>简介</span><textarea name="description" rows="3" placeholder="可选：留空后尝试自动提取"></textarea></label><label class="field full"><span>备注</span><textarea name="notes" rows="3" placeholder="可选"></textarea></label></div><div class="actions"><button class="button ghost" type="button" onclick="closeAdminModal()">取消</button><button class="button">保存</button></div></form></div>
+  <div id="providerModal" class="modal"><form id="providerForm" class="modal-card narrow"><div class="modal-head"><h2>供应商配置</h2><button type="button" class="modal-close" data-close-modal>×</button></div><input type="hidden" name="id"><div class="stack"><label class="field"><span>名称</span><input class="input" name="name" required></label><label class="field"><span>Base URL</span><input class="input" name="base_url" required></label><label class="field"><span>API Key</span><input class="input" type="password" name="api_key" placeholder="留空表示不修改"></label><label class="check-row"><input type="checkbox" name="enabled" checked> 启用</label></div><div class="actions"><button type="button" class="button secondary" id="testProvider">测试连接</button><button class="button">保存</button></div></form></div>
+  <div id="modelModal" class="modal"><form id="modelForm" class="modal-card narrow"><div class="modal-head"><h2>模型配置</h2><button type="button" class="modal-close" data-close-modal>×</button></div><input type="hidden" name="id"><div class="stack"><label class="field"><span>供应商</span><select name="provider_id" required></select></label><label class="field"><span>显示名称</span><input class="input" name="display_name" required></label><label class="field"><span>模型名称</span><input class="input" name="model_name" required></label><fieldset><legend>模型能力</legend><label><input type="checkbox" name="capability" value="chat"> 对话</label><label><input type="checkbox" name="capability" value="classification"> 分类</label><label><input type="checkbox" name="capability" value="summary"> 摘要</label><label><input type="checkbox" name="capability" value="embedding"> Embedding</label></fieldset><label class="check-row"><input type="checkbox" name="enabled" checked> 启用</label></div><div class="actions"><button type="button" class="button secondary" id="testModel">测试模型</button><button class="button">保存</button></div></form></div>
+  <div id="confirmModal" class="modal"><div class="modal-card confirm-card"><h2 data-confirm-title></h2><p data-confirm-message></p><div class="actions"><button class="button ghost" data-confirm-no>取消</button><button class="button" data-confirm-yes>确认</button></div></div></div>
+  <div id="toastRoot" class="toast-root"></div>
+  <script src="/assets/api.js"></script><script src="/assets/admin.js"></script>
+</body>
+</html>

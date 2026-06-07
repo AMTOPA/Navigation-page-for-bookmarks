@@ -1,0 +1,12 @@
+{
+  "server_url": "https://search.math-enthusiast.top",
+  "api_token": "bkm_请在后台生成",
+  "edge_profile": "Default",
+  "upload_local_files": true,
+  "max_attachment_mb": 100,
+  "allowed_extensions": [
+    ".pdf", ".txt", ".md", ".html", ".htm",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".png", ".jpg", ".jpeg", ".zip", ".7z"
+  ]
+}

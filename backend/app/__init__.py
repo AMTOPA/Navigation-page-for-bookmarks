@@ -1,0 +1,1 @@
+"""Edge bookmark navigation backend."""

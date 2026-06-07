@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dashboard">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>我的收藏导航</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">N</span><span>收藏导航</span></a>
+    <div class="top-actions">
+      <select class="theme-select" data-theme-select aria-label="主题"><option value="dashboard">现代仪表盘</option><option value="glass">玻璃科技</option><option value="compact">极简密集</option></select>
+      <label class="top-select-label"><span>搜索栏样式</span><select id="searchBarMode" aria-label="搜索栏样式"><option value="embedded">嵌入页面</option><option value="compact">纵向压缩</option><option value="circle">圆形按钮</option></select></label>
+      <button class="icon-button" data-show-progress title="显示任务进度">进度</button>
+      <a class="button secondary" href="/admin">后台管理</a>
+      <button class="button ghost" onclick="logout()">退出</button>
+    </div>
+  </header>
+  <aside class="progress-widget" id="progressWidget">
+    <div><strong data-progress-name>后台任务</strong><span data-progress-detail></span></div>
+    <div class="progress-track"><span data-progress-bar></span></div>
+    <button data-progress-hide aria-label="隐藏">×</button>
+  </aside>
+  <main class="container">
+    <section class="page-heading">
+      <div><span class="eyebrow">YOUR COLLECTION</span><h1>今天想找什么？</h1><p class="muted">关键词优先，结果不足时自动启用语义搜索。</p></div>
+      <button id="addButton" class="button">新增链接</button>
+    </section>
+    <section class="control-panel" id="controlPanel">
+      <div class="search-box"><span class="search-icon">⌕</span><input id="search" class="input search" placeholder="搜索标题、内容、标签，或描述你记得的大概内容">
+        <div class="search-mode-switch" role="radiogroup" aria-label="搜索模式">
+          <button type="button" data-search-mode="off" aria-pressed="true">普通</button>
+          <button type="button" data-search-mode="smart" aria-pressed="false">智能</button>
+          <button type="button" data-search-mode="ai" aria-pressed="false">AI</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <label>分组<select id="groupBy"><option value="category">AI/手动分类</option><option value="folder">Edge 文件夹</option><option value="importance">重要性</option><option value="letter">首字符</option><option value="updated">更新时间</option><option value="favorited">收藏时间</option></select></label>
+        <label>组别<select id="groupFilter"><option value="">全部组别</option></select></label>
+        <label>排序<select id="sortBy"><option value="favorited_at">收藏时间</option><option value="updated_at">更新时间</option><option value="title">标题</option><option value="importance">重要性</option></select></label>
+        <label>方向<select id="direction"><option value="desc">倒序</option><option value="asc">正序</option></select></label>
+        <button id="editMode" class="button secondary">开启编辑</button>
+      </div>
+      <div id="searchStatus" class="search-status" hidden></div>
+      <section id="aiSearchPanel" class="ai-search-panel" hidden>
+        <div class="ai-panel-head"><div><strong>AI 搜索助手</strong><span id="aiModelHint">先检索收藏，再由快速模型帮助缩小范围</span></div><label>布局<select id="aiLayout"><option value="drawer">右侧抽屉</option><option value="inline">搜索栏下方</option></select></label></div>
+        <textarea id="aiContext" rows="2" placeholder="可选：补充你还记得的用途、页面内容、时间或关键词"></textarea>
+        <div class="ai-actions"><button class="button" id="askAi" type="button">询问 AI</button><button class="button ghost" id="stopAi" type="button" disabled>停止</button></div>
+        <div id="aiSuggestions" class="suggestion-list"></div>
+        <div id="aiAnswer" class="ai-answer muted">输入大概内容后点击“询问 AI”。</div>
+      </section>
+    </section>
+    <button id="searchOrb" class="search-orb" type="button" aria-label="展开搜索">⌕</button>
+    <div id="dragNotice" class="notice" hidden>分类拖拽只在“AI/手动分类”分组下可用。</div>
+    <div id="groups"><div class="skeleton-grid"><i></i><i></i><i></i></div></div>
+  </main>
+  <aside id="groupOutline" class="group-outline" aria-label="组别大纲">
+    <button id="groupRailToggle" class="group-rail-toggle" type="button" aria-expanded="true" title="折叠组别大纲">›</button>
+    <nav id="groupRail" class="group-rail" aria-label="组别快速导航"></nav>
+  </aside>
+  <div id="editModal" class="modal"><form id="editForm" class="modal-card">
+    <div class="modal-head"><div><span class="eyebrow">BOOKMARK</span><h2 id="editTitle">编辑收藏</h2></div><button type="button" class="modal-close" data-close>×</button></div>
+    <input type="hidden" name="id">
+    <div class="form-grid">
+      <label class="field full"><span>URL <b class="required">*</b></span><input class="input" name="url" placeholder="必填：https://example.com" required></label>
+      <label class="field"><span>标题</span><input class="input" name="title" placeholder="可选：留空后自动获取"></label>
+      <label class="field"><span>分类</span><input class="input" name="category" placeholder="可选：留空后自动分类"></label>
+      <label class="field"><span>重要性</span><select name="importance"><option value="high">非常重要</option><option value="medium">比较重要</option><option value="normal" selected>一般</option><option value="low">不重要</option></select></label>
+      <label class="field"><span>标签（逗号分隔）</span><input class="input" name="tags" placeholder="可选：数学, 工具"></label>
+      <label class="field full"><span>简介</span><textarea name="description" rows="3" placeholder="可选：留空后尝试自动提取"></textarea></label>
+      <label class="field"><span>图标 URL</span><input class="input" name="favicon" placeholder="可选"></label>
+      <label class="field"><span>图片 URL</span><input class="input" name="image" placeholder="可选"></label>
+      <label class="field full"><span>备注</span><textarea name="notes" rows="3" placeholder="可选：仅用于自己的补充说明"></textarea></label>
+    </div>
+    <div class="actions"><button class="button ghost" type="button" data-close>取消</button><button class="button" type="submit">保存</button></div>
+  </form></div>
+  <div id="confirmModal" class="modal"><div class="modal-card confirm-card"><h2 data-confirm-title>确认操作</h2><p data-confirm-message></p><div class="actions"><button class="button ghost" data-confirm-no>取消</button><button class="button" data-confirm-yes>确认</button></div></div></div>
+  <div id="toastRoot" class="toast-root"></div>
+  <script src="/assets/api.js"></script><script src="/assets/nav.js"></script>
+</body>
+</html>
