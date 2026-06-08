@@ -6,13 +6,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .config import get_settings
 from .db import get_db
 from .importers import parse_edge_html
-from .models import ApiToken, AuditLog, Bookmark, BookmarkSource, Job, MediaAsset, Setting, SyncRun, utcnow
-from .schemas import AISettingsUpdate, EdgeSyncRequest, TokenCreate
+from .models import ApiToken, AuditLog, Bookmark, BookmarkSource, Job, LinkHealth, MediaAsset, Setting, SyncRun, utcnow
+from .schemas import AISettingsUpdate, EdgeSyncRequest, HealthCheckSettingsUpdate, TokenCreate
 from .security import (
     encrypt_value,
     hash_token,
@@ -270,7 +270,7 @@ def list_jobs(
     status: str = "",
     job_type: str = "",
     page: int | None = None,
-    page_size: int = 50,
+    page_size: int = 20,
     _principal: dict = Depends(require_session),
     db: Session = Depends(get_db),
 ):
@@ -316,7 +316,7 @@ def list_logs(
     event_type: str = "",
     level: str = "",
     page: int | None = None,
-    page_size: int = 50,
+    page_size: int = 20,
     _principal: dict = Depends(require_session),
     db: Session = Depends(get_db),
 ):
@@ -339,6 +339,126 @@ def list_logs(
         stmt.order_by(AuditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
     return {"items": items, "page": page, "page_size": page_size, "total": total}
+
+
+def _health_dict(health: LinkHealth, bookmark: Bookmark) -> dict:
+    return {
+        "id": health.id,
+        "bookmark_id": bookmark.id,
+        "title": bookmark.title,
+        "url": bookmark.url,
+        "status": health.status,
+        "http_status": health.http_status,
+        "final_url": health.final_url,
+        "latency_ms": health.latency_ms,
+        "error": health.error,
+        "checked_at": health.checked_at,
+    }
+
+
+@router.get("/health-checks")
+def list_health_checks(
+    status: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    _principal: dict = Depends(require_session),
+    db: Session = Depends(get_db),
+):
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 200)
+    stmt = (
+        select(LinkHealth)
+        .join(Bookmark, Bookmark.id == LinkHealth.bookmark_id)
+        .where(Bookmark.deleted_at.is_(None))
+        .options(selectinload(LinkHealth.bookmark))
+    )
+    count_stmt = (
+        select(func.count(LinkHealth.id))
+        .join(Bookmark, Bookmark.id == LinkHealth.bookmark_id)
+        .where(Bookmark.deleted_at.is_(None))
+    )
+    if status:
+        stmt = stmt.where(LinkHealth.status == status)
+        count_stmt = count_stmt.where(LinkHealth.status == status)
+    total = db.scalar(count_stmt) or 0
+    items = db.scalars(
+        stmt.order_by(LinkHealth.checked_at.desc(), LinkHealth.updated_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "items": [_health_dict(item, item.bookmark) for item in items],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+    }
+
+
+@router.post("/health-checks/run")
+def run_health_checks(
+    bookmark_ids: list[str] | None = None,
+    principal: dict = Depends(require_session_write),
+    db: Session = Depends(get_db),
+):
+    stmt = select(Bookmark.id).where(Bookmark.deleted_at.is_(None))
+    if bookmark_ids:
+        stmt = stmt.where(Bookmark.id.in_(bookmark_ids))
+    ids = list(db.scalars(stmt).all())
+    batch = create_job_batch(db, "链接健康检查", "health_check", principal["id"])
+    for bookmark_id in ids:
+        queue_job(db, bookmark_id, "health_check", force=True, batch_id=batch.id)
+    audit(db, "health_check_queued", "链接健康检查已加入队列", actor=principal["id"], count=len(ids))
+    db.commit()
+    return {"ok": True, "count": len(ids), "batch_id": batch.id}
+
+
+@router.post("/health-checks/{bookmark_id}/run")
+def run_single_health_check(
+    bookmark_id: str,
+    principal: dict = Depends(require_session_write),
+    db: Session = Depends(get_db),
+):
+    bookmark = db.get(Bookmark, bookmark_id)
+    if not bookmark or bookmark.deleted_at:
+        raise HTTPException(status_code=404, detail="收藏不存在")
+    queue_job(db, bookmark.id, "health_check", force=True)
+    audit(db, "health_check_queued", "链接健康检查已加入队列", actor=principal["id"], bookmark_id=bookmark.id)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/settings/health-check")
+def get_health_check_settings(
+    _principal: dict = Depends(require_session),
+    db: Session = Depends(get_db),
+):
+    enabled = db.get(Setting, "health_check_enabled")
+    interval = db.get(Setting, "health_check_interval_days")
+    last_run = db.get(Setting, "health_check_last_scheduled_at")
+    return {
+        "enabled": bool(enabled and enabled.value == "1"),
+        "interval_days": int(interval.value) if interval and interval.value.isdigit() else 7,
+        "last_scheduled_at": last_run.value if last_run else "",
+    }
+
+
+@router.put("/settings/health-check")
+def update_health_check_settings(
+    payload: HealthCheckSettingsUpdate,
+    principal: dict = Depends(require_session_write),
+    db: Session = Depends(get_db),
+):
+    values = {
+        "health_check_enabled": "1" if payload.enabled else "0",
+        "health_check_interval_days": str(payload.interval_days),
+    }
+    for key, value in values.items():
+        setting = db.get(Setting, key) or Setting(key=key)
+        setting.value = value
+        db.add(setting)
+    audit(db, "health_check_settings_updated", "更新链接健康检查设置", actor=principal["id"])
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/sync/runs")

@@ -1,17 +1,57 @@
 let adminBookmarks = [];
+let adminJobs = [];
+let adminLogs = [];
+let healthItems = [];
 let providerData = {providers: [], routes: {}};
 const selected = new Set();
 let adminEditorInitial = null;
 let adminSearchTimer = null;
+const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100];
+const listCache = new Map();
+const requestControllers = new Map();
+const loadedTabs = new Set();
+
+function savedPageSize(name) {
+  const value = Number(localStorage.getItem(`adminPageSize:${name}`));
+  return PAGE_SIZE_OPTIONS.includes(value) ? value : 20;
+}
+
 const pages = {
-  bookmarks: {page: 1, total: 0, pageSize: 50},
-  jobs: {page: 1, total: 0, pageSize: 50},
-  logs: {page: 1, total: 0, pageSize: 50}
+  bookmarks: {page: 1, total: 0, pageSize: savedPageSize("bookmarks")},
+  jobs: {page: 1, total: 0, pageSize: savedPageSize("jobs")},
+  logs: {page: 1, total: 0, pageSize: savedPageSize("logs")},
+  health: {page: 1, total: 0, pageSize: savedPageSize("health")}
 };
 const sectionTitles = {
   bookmarks: "收藏管理", import: "导入与同步", models: "AI 模型",
-  search: "搜索索引", jobs: "任务中心", logs: "系统日志", account: "账号安全"
+  search: "搜索索引", health: "链接健康", jobs: "任务中心", logs: "系统日志", account: "账号安全"
 };
+
+async function listRequest(section, url, force = false) {
+  const cached = listCache.get(url);
+  if (!force && cached && Date.now() - cached.time < 30_000) return cached.data;
+  requestControllers.get(section)?.abort();
+  const controller = new AbortController();
+  requestControllers.set(section, controller);
+  try {
+    const data = await api(url, {signal: controller.signal});
+    listCache.set(url, {time: Date.now(), data});
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") return null;
+    throw error;
+  } finally {
+    if (requestControllers.get(section) === controller) requestControllers.delete(section);
+  }
+}
+
+function invalidateSection(section) {
+  for (const key of listCache.keys()) {
+    if (key.includes(`/${section}`) || (section === "bookmarks" && key.includes("/api/bookmarks"))) {
+      listCache.delete(key);
+    }
+  }
+}
 
 function safeAdminTarget(item) {
   if (item.local_copy_url?.startsWith("/api/files/")) return item.local_copy_url;
@@ -38,19 +78,33 @@ function bookmarkRows() {
     try {
       await api(`/api/bookmarks/${button.dataset.delete}`, {method:"DELETE"});
       toast("收藏已删除");
-      await loadBookmarks();
+      adminBookmarks = adminBookmarks.filter(item => item.id !== button.dataset.delete);
+      pages.bookmarks.total = Math.max(0, pages.bookmarks.total - 1);
+      selected.delete(button.dataset.delete);
+      invalidateSection("bookmarks");
+      if (!adminBookmarks.length && pages.bookmarks.page > 1) {
+        pages.bookmarks.page -= 1;
+        await loadBookmarks(true);
+      } else {
+        bookmarkRows();
+        renderPager("bookmarkPager", "bookmarks", pages.bookmarks, page => {
+          pages.bookmarks.page = page;
+          loadBookmarks();
+        });
+      }
     } catch (error) { toast(error.message, "error"); }
   }));
 }
 
-async function loadBookmarks() {
+async function loadBookmarks(force = false) {
   const state = pages.bookmarks;
   const query = document.getElementById("adminSearch").value.trim();
-  const result = await api(`/api/bookmarks?page=${state.page}&page_size=${state.pageSize}&compact=true&q=${encodeURIComponent(query)}`);
+  const result = await listRequest("bookmarks", `/api/bookmarks?page=${state.page}&page_size=${state.pageSize}&compact=true&q=${encodeURIComponent(query)}`, force);
+  if (!result) return;
   adminBookmarks = result.items;
   state.total = result.total;
   bookmarkRows();
-  renderPager("bookmarkPager", state, page => {
+  renderPager("bookmarkPager", "bookmarks", state, page => {
     state.page = page;
     loadBookmarks();
   });
@@ -101,11 +155,8 @@ async function runBatch(action) {
   } catch (error) { toast(error.message, "error"); }
 }
 
-async function loadJobs() {
-  const state = pages.jobs;
-  const status = document.getElementById("jobStatus").value;
-  const result = await api(`/api/jobs?page=${state.page}&page_size=${state.pageSize}&status=${encodeURIComponent(status)}`);
-  document.getElementById("jobRows").innerHTML = result.items.map(job => `<tr>
+function jobRows() {
+  document.getElementById("jobRows").innerHTML = adminJobs.map(job => `<tr>
     <td>${escapeHtml(job.job_type)}</td>
     <td class="${job.status === "failed" ? "status-failed" : ""}">${escapeHtml(job.status)}</td>
     <td>${job.attempts}/${job.max_attempts}</td><td>${escapeHtml(job.error || "")}</td>
@@ -115,42 +166,113 @@ async function loadJobs() {
   document.querySelectorAll("[data-retry]").forEach(button => button.addEventListener("click", async () => {
     try {
       await api(`/api/jobs/${button.dataset.retry}/retry`, {method:"POST"});
+      const job = adminJobs.find(item => item.id === button.dataset.retry);
+      if (job) Object.assign(job, {status:"queued", attempts:0, error:""});
+      invalidateSection("jobs");
+      jobRows();
       toast("任务已重新排队");
-      await loadJobs();
+      refreshProgress();
     } catch (error) { toast(error.message, "error"); }
   }));
+}
+
+async function loadJobs(force = false) {
+  const state = pages.jobs;
+  const status = document.getElementById("jobStatus").value;
+  const result = await listRequest("jobs", `/api/jobs?page=${state.page}&page_size=${state.pageSize}&status=${encodeURIComponent(status)}`, force);
+  if (!result) return;
+  adminJobs = result.items;
+  jobRows();
   state.total = result.total;
-  renderPager("jobPager", state, page => {
+  renderPager("jobPager", "jobs", state, page => {
     state.page = page;
     loadJobs();
   });
 }
 
-async function loadLogs() {
+async function loadLogs(force = false) {
   const state = pages.logs;
   const level = document.getElementById("logLevel").value;
-  const result = await api(`/api/logs?page=${state.page}&page_size=${state.pageSize}&level=${encodeURIComponent(level)}`);
-  document.getElementById("logRows").innerHTML = result.items.map(log => `<tr>
+  const result = await listRequest("logs", `/api/logs?page=${state.page}&page_size=${state.pageSize}&level=${encodeURIComponent(level)}`, force);
+  if (!result) return;
+  adminLogs = result.items;
+  document.getElementById("logRows").innerHTML = adminLogs.map(log => `<tr>
     <td>${escapeHtml(log.event_type)}</td><td>${escapeHtml(log.level)}</td>
     <td>${escapeHtml(log.message)}</td><td>${escapeHtml(JSON.stringify(log.details))}</td>
     <td>${formatTime(log.created_at)}</td>
   </tr>`).join("");
   state.total = result.total;
-  renderPager("logPager", state, page => {
+  renderPager("logPager", "logs", state, page => {
     state.page = page;
     loadLogs();
   });
 }
 
-function renderPager(id, state, onPage) {
+function healthRows() {
+  const labels = {ok:"正常", redirected:"重定向", failed:"失败", timeout:"超时", unsupported:"不支持", pending:"待检查"};
+  document.getElementById("healthRows").innerHTML = healthItems.map(item => `<tr>
+    <td><strong>${escapeHtml(item.title || item.url)}</strong><br><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url)}</a></td>
+    <td class="status-${escapeHtml(item.status)}">${escapeHtml(labels[item.status] || item.status)}</td>
+    <td>${item.http_status ?? "—"}</td>
+    <td>${item.latency_ms == null ? "—" : `${item.latency_ms} ms`}</td>
+    <td>${item.error ? escapeHtml(item.error) : escapeHtml(item.final_url || "—")}</td>
+    <td>${formatTime(item.checked_at)}</td>
+    <td><button class="button secondary" data-check-health="${item.bookmark_id}">重新检查</button></td>
+  </tr>`).join("") || '<tr><td colspan="7" class="muted">暂无检查记录。可以先检查选中收藏或全部收藏。</td></tr>';
+  document.querySelectorAll("[data-check-health]").forEach(button => button.addEventListener("click", async () => {
+    try {
+      await api(`/api/health-checks/${button.dataset.checkHealth}/run`, {method:"POST"});
+      toast("健康检查已加入队列");
+      invalidateSection("health-checks");
+      refreshProgress();
+    } catch (error) { toast(error.message, "error"); }
+  }));
+}
+
+async function loadHealth(force = false) {
+  const state = pages.health;
+  const status = document.getElementById("healthStatus").value;
+  const result = await listRequest("health-checks", `/api/health-checks?page=${state.page}&page_size=${state.pageSize}&status=${encodeURIComponent(status)}`, force);
+  if (!result) return;
+  healthItems = result.items;
+  state.total = result.total;
+  healthRows();
+  renderPager("healthPager", "health", state, page => {
+    state.page = page;
+    loadHealth();
+  });
+}
+
+async function loadHealthSettings() {
+  const settings = await api("/api/settings/health-check");
+  const form = document.getElementById("healthSettingsForm");
+  form.elements.enabled.checked = settings.enabled;
+  form.elements.interval_days.value = settings.interval_days;
+  document.getElementById("healthLastRun").textContent = settings.last_scheduled_at
+    ? `上次自动排队：${formatTime(settings.last_scheduled_at)}`
+    : "尚未自动运行";
+}
+
+function renderPager(id, name, state, onPage) {
   const pageCount = Math.max(Math.ceil(state.total / state.pageSize), 1);
+  if (state.page > pageCount) state.page = pageCount;
+  const start = state.total ? (state.page - 1) * state.pageSize + 1 : 0;
+  const end = Math.min(state.page * state.pageSize, state.total);
   const root = document.getElementById(id);
   root.innerHTML = `<button class="button ghost" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一页</button>
-    <span>第 ${state.page} / ${pageCount} 页 · 共 ${state.total} 条</span>
+    <span>${start}-${end} / ${state.total} · 第 ${state.page}/${pageCount} 页</span>
+    <label>每页 <select data-page-size>${PAGE_SIZE_OPTIONS.map(value => `<option value="${value}" ${value === state.pageSize ? "selected" : ""}>${value}</option>`).join("")}</select></label>
     <button class="button ghost" data-page="${state.page + 1}" ${state.page >= pageCount ? "disabled" : ""}>下一页</button>`;
   root.querySelectorAll("[data-page]:not(:disabled)").forEach(button =>
     button.addEventListener("click", () => onPage(Number(button.dataset.page)))
   );
+  root.querySelector("[data-page-size]").addEventListener("change", event => {
+    state.pageSize = Number(event.target.value);
+    state.page = 1;
+    localStorage.setItem(`adminPageSize:${name}`, String(state.pageSize));
+    invalidateSection(name);
+    onPage(1);
+  });
 }
 
 async function loadTokens() {
@@ -284,10 +406,23 @@ function switchTab(tabName) {
   document.getElementById(`tab-${tabName}`).classList.add("active");
   document.getElementById("sectionTitle").textContent = sectionTitles[tabName];
   document.getElementById("adminSidebar").classList.remove("open");
+  const firstLoad = !loadedTabs.has(tabName);
+  loadedTabs.add(tabName);
+  if (tabName === "bookmarks") loadBookmarks();
+  if (tabName === "import" && firstLoad) loadTokens();
   if (tabName === "jobs") loadJobs();
   if (tabName === "logs") loadLogs();
-  if (tabName === "search") loadSearchStatus();
-  if (tabName === "models") loadProviders();
+  if (tabName === "search" && firstLoad) loadSearchStatus();
+  if (tabName === "models" && firstLoad) loadProviders();
+  if (tabName === "health") {
+    loadHealth();
+    if (firstLoad) loadHealthSettings();
+  }
+  if (tabName === "account" && firstLoad) {
+    api("/api/settings/account").then(account => {
+      document.getElementById("accountForm").elements.username.value = account.username;
+    }).catch(error => toast(error.message, "error"));
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -298,7 +433,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     clearTimeout(adminSearchTimer);
     adminSearchTimer = setTimeout(() => {
       pages.bookmarks.page = 1;
-      loadBookmarks();
+      loadBookmarks(true);
     }, 250);
   });
   document.getElementById("adminAdd").addEventListener("click", () => openAdminModal());
@@ -308,11 +443,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.getElementById("jobStatus").addEventListener("change", () => {
     pages.jobs.page = 1;
-    loadJobs();
+    invalidateSection("jobs");
+    loadJobs(true);
   });
   document.getElementById("logLevel").addEventListener("change", () => {
     pages.logs.page = 1;
-    loadLogs();
+    invalidateSection("logs");
+    loadLogs(true);
+  });
+  document.getElementById("healthStatus").addEventListener("change", () => {
+    pages.health.page = 1;
+    invalidateSection("health-checks");
+    loadHealth(true);
   });
   document.querySelectorAll("[data-batch]").forEach(button => button.addEventListener("click", () => runBatch(button.dataset.batch)));
   document.querySelectorAll("[data-close-modal]").forEach(button => button.addEventListener("click", () => button.closest(".modal").classList.remove("open")));
@@ -349,10 +491,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
     try {
-      if (!id || Object.keys(payload).length) await api(id ? `/api/bookmarks/${id}` : "/api/bookmarks", {method:id ? "PATCH" : "POST", body:payload});
+      const updated = (!id || Object.keys(payload).length)
+        ? await api(id ? `/api/bookmarks/${id}` : "/api/bookmarks", {method:id ? "PATCH" : "POST", body:payload})
+        : null;
       closeAdminModal();
       toast(id ? "收藏已保存" : "链接已添加");
-      await loadBookmarks();
+      invalidateSection("bookmarks");
+      if (id && updated) {
+        const index = adminBookmarks.findIndex(item => item.id === id);
+        if (index >= 0) {
+          adminBookmarks[index] = {
+            ...adminBookmarks[index],
+            ...updated,
+            folder_paths: (updated.sources || []).filter(source => source.is_active && source.folder_path).map(source => source.folder_path)
+          };
+          bookmarkRows();
+        }
+      } else if (!id) {
+        await loadBookmarks(true);
+      }
     } catch (error) { toast(error.message, "error"); }
   });
 
@@ -362,7 +519,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       const result = await api("/api/import/edge-html", {method:"POST", body:new FormData(event.target)});
       document.getElementById("importResult").textContent = `完成：${result.total} 条，新增 ${result.added} 条`;
       toast("Edge HTML 导入完成");
-      await loadBookmarks();
+      invalidateSection("bookmarks");
+      await loadBookmarks(true);
     } catch (error) { toast(error.message, "error"); }
   });
   document.getElementById("tokenForm").addEventListener("submit", async event => {
@@ -424,6 +582,39 @@ document.addEventListener("DOMContentLoaded", async () => {
       refreshProgress();
     } catch (error) { toast(error.message, "error"); }
   });
+  document.getElementById("runSelectedHealth").addEventListener("click", async () => {
+    const ids = [...selected];
+    if (!ids.length) return toast("请先在收藏管理中选择要检查的收藏", "error");
+    try {
+      const result = await api("/api/health-checks/run", {method:"POST", body:ids});
+      toast(`已加入 ${result.count} 个健康检查任务`);
+      invalidateSection("health-checks");
+      refreshProgress();
+    } catch (error) { toast(error.message, "error"); }
+  });
+  document.getElementById("runAllHealth").addEventListener("click", async () => {
+    if (!await confirmAction({title:"检查全部链接", message:"将逐个访问全部公网收藏地址，只检查可达性，不抓取页面正文。"})) return;
+    try {
+      const result = await api("/api/health-checks/run", {method:"POST", body:[]});
+      toast(`已加入 ${result.count} 个健康检查任务`);
+      invalidateSection("health-checks");
+      refreshProgress();
+    } catch (error) { toast(error.message, "error"); }
+  });
+  document.getElementById("healthSettingsForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await api("/api/settings/health-check", {
+        method:"PUT",
+        body:{
+          enabled:event.target.elements.enabled.checked,
+          interval_days:Number(event.target.elements.interval_days.value)
+        }
+      });
+      toast("链接健康检查设置已保存");
+      await loadHealthSettings();
+    } catch (error) { toast(error.message, "error"); }
+  });
   document.getElementById("accountForm").addEventListener("submit", async event => {
     event.preventDefault();
     try {
@@ -433,7 +624,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (error) { toast(error.message, "error"); }
   });
 
-  const account = await api("/api/settings/account");
-  document.getElementById("accountForm").elements.username.value = account.username;
-  await Promise.all([loadBookmarks(), loadTokens(), loadProviders()]);
+  loadedTabs.add("bookmarks");
+  await loadBookmarks();
 });

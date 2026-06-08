@@ -1,5 +1,5 @@
 import argparse
-from datetime import timedelta
+from datetime import datetime, timedelta
 import time
 
 from sqlalchemy import func, select, update
@@ -7,10 +7,14 @@ from sqlalchemy import func, select, update
 from .ai_service import analyze_bookmark
 from .crawler import crawl_url
 from .db import SessionLocal
+from .health_service import check_link_health
 from .media_service import cache_media
-from .models import AIRoute, Bookmark, Job, JobBatch, SearchIndex, utcnow
+from .models import AIRoute, Bookmark, Job, JobBatch, LinkHealth, SearchIndex, Setting, utcnow
 from .search_service import index_bookmark
 from .services import audit, queue_job
+
+
+next_health_schedule_check = 0.0
 
 
 def apply_if_unlocked(bookmark: Bookmark, field: str, value):
@@ -66,6 +70,57 @@ def process_media(db, _job: Job, bookmark: Bookmark):
     cache_media(db, bookmark, "image")
 
 
+def process_health_check(db, _job: Job, bookmark: Bookmark):
+    result = check_link_health(bookmark.url)
+    health = db.scalar(select(LinkHealth).where(LinkHealth.bookmark_id == bookmark.id))
+    if not health:
+        health = LinkHealth(bookmark_id=bookmark.id)
+        db.add(health)
+    health.status = result["status"]
+    health.http_status = result["http_status"]
+    health.final_url = result["final_url"]
+    health.latency_ms = result["latency_ms"]
+    health.error = result["error"]
+    health.checked_at = utcnow()
+
+
+def schedule_health_checks_if_due(db):
+    global next_health_schedule_check
+    now = time.monotonic()
+    if now < next_health_schedule_check:
+        return
+    next_health_schedule_check = now + 60
+    enabled = db.get(Setting, "health_check_enabled")
+    if not enabled or enabled.value != "1":
+        return
+    interval = db.get(Setting, "health_check_interval_days")
+    interval_days = int(interval.value) if interval and interval.value.isdigit() else 7
+    last_run = db.get(Setting, "health_check_last_scheduled_at")
+    if last_run and last_run.value:
+        try:
+            last_scheduled = datetime.fromisoformat(last_run.value)
+            if utcnow() - last_scheduled < timedelta(days=interval_days):
+                return
+        except ValueError:
+            pass
+    active = db.scalar(
+        select(func.count(Job.id)).where(
+            Job.job_type == "health_check",
+            Job.status.in_(["queued", "running"]),
+        )
+    )
+    if active:
+        return
+    batch = JobBatch(name="定期链接健康检查", job_type="health_check", created_by="system")
+    db.add(batch)
+    db.flush()
+    for bookmark_id in db.scalars(select(Bookmark.id).where(Bookmark.deleted_at.is_(None))).all():
+        queue_job(db, bookmark_id, "health_check", batch_id=batch.id)
+    setting = last_run or Setting(key="health_check_last_scheduled_at")
+    setting.value = utcnow().isoformat()
+    db.add(setting)
+
+
 def finish_batch_if_complete(db, batch_id: str | None):
     if not batch_id:
         return
@@ -91,6 +146,7 @@ def finish_batch_if_complete(db, batch_id: str | None):
 
 def process_one() -> bool:
     with SessionLocal() as db:
+        schedule_health_checks_if_due(db)
         stale_before = utcnow() - timedelta(minutes=30)
         db.execute(
             update(Job)
@@ -123,6 +179,8 @@ def process_one() -> bool:
                 index_bookmark(db, bookmark)
             elif job.job_type == "media_cache":
                 process_media(db, job, bookmark)
+            elif job.job_type == "health_check":
+                process_health_check(db, job, bookmark)
             else:
                 raise ValueError(f"未知任务类型：{job.job_type}")
             job.status = "success"

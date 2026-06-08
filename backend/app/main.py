@@ -94,6 +94,15 @@ app.include_router(search_router)
 login_attempts: dict[str, deque] = defaultdict(deque)
 
 
+@app.middleware("http")
+async def add_server_timing(request: Request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    duration = (time.perf_counter() - started) * 1000
+    response.headers["Server-Timing"] = f"app;dur={duration:.1f}"
+    return response
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -178,7 +187,7 @@ def list_bookmarks(
     _principal: dict = Depends(require_read),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Bookmark).options(selectinload(Bookmark.sources))
+    stmt = select(Bookmark).options(selectinload(Bookmark.sources), selectinload(Bookmark.link_health))
     if not include_deleted:
         stmt = stmt.where(Bookmark.deleted_at.is_(None))
     if q:
@@ -194,7 +203,7 @@ def list_bookmarks(
         )
     if page is not None or page_size is not None:
         page = page or 1
-        page_size = page_size or 50
+        page_size = page_size or 20
         count_stmt = select(func.count(Bookmark.id))
         if not include_deleted:
             count_stmt = count_stmt.where(Bookmark.deleted_at.is_(None))
@@ -248,7 +257,7 @@ def navigation_snapshot(
     bookmarks = db.scalars(
         select(Bookmark)
         .where(Bookmark.deleted_at.is_(None))
-        .options(selectinload(Bookmark.sources))
+        .options(selectinload(Bookmark.sources), selectinload(Bookmark.link_health))
         .order_by(Bookmark.updated_at.desc())
     ).all()
     response = JSONResponse(
@@ -410,8 +419,13 @@ def batch_bookmarks(
         raise HTTPException(400, "批量删除需要明确确认")
     bookmarks = db.scalars(select(Bookmark).where(Bookmark.id.in_(payload.ids))).all()
     batch = None
-    if payload.action in {"crawl", "ai", "search_index"}:
-        labels = {"crawl": "批量抓取", "ai": "批量 AI 处理", "search_index": "批量更新搜索索引"}
+    if payload.action in {"crawl", "ai", "search_index", "health_check"}:
+        labels = {
+            "crawl": "批量抓取",
+            "ai": "批量 AI 处理",
+            "search_index": "批量更新搜索索引",
+            "health_check": "批量检查链接",
+        }
         batch = create_job_batch(db, labels[payload.action], payload.action, principal["id"])
     for bookmark in bookmarks:
         if payload.action == "delete":

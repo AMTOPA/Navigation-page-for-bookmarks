@@ -4,6 +4,11 @@ let editing = false;
 let editorInitial = null;
 let searchTimer = null;
 let searchSequence = 0;
+let searchController = null;
+let renderSignature = "";
+let renderRevision = 0;
+let renderFrame = 0;
+let searchSyncing = false;
 let aiController = null;
 let groupObserver = null;
 let groupPositionObserver = null;
@@ -129,9 +134,20 @@ function refreshGroupFilter() {
 }
 
 function render() {
+  const selectedGroup = document.getElementById("groupFilter")?.value || "";
+  const signature = [
+    renderRevision,
+    preferences.groupBy,
+    preferences.sortBy,
+    preferences.direction,
+    selectedGroup,
+    editing,
+    visibleBookmarks.map(item => item.id).join(",")
+  ].join("|");
+  if (signature === renderSignature) return;
+  renderSignature = signature;
   if (groupObserver) groupObserver.disconnect();
   groupItems.clear();
-  const selectedGroup = document.getElementById("groupFilter")?.value || "";
   const groups = new Map();
   visibleBookmarks.forEach(item => {
     groupNames(item).forEach(name => {
@@ -161,6 +177,14 @@ function render() {
   }, {rootMargin: "500px 0px"});
   document.querySelectorAll(".lazy-grid").forEach(grid => groupObserver.observe(grid));
   renderGroupRail([...groups.entries()]);
+}
+
+function scheduleRender() {
+  if (renderFrame) return;
+  renderFrame = requestAnimationFrame(() => {
+    renderFrame = 0;
+    render();
+  });
 }
 
 function populateGroup(grid) {
@@ -377,20 +401,21 @@ function bindGroupDrops() {
 }
 
 function compactBookmark(item) {
-  return {
+  return prepareBookmark({
     id: item.id, url: item.url, title: item.title, description: item.description, summary: item.summary,
     display_image_url: item.display_image_url, final_category: item.final_category,
     manual_category: item.manual_category, tags: item.tags || [], importance: item.importance,
     notes: item.notes, favorited_at: item.favorited_at, updated_at: item.updated_at,
     crawl_status: item.crawl_status, ai_status: item.ai_status, local_copy_url: item.local_copy_url,
     folder_paths: (item.sources || []).filter(source => source.is_active && source.folder_path).map(source => source.folder_path)
-  };
+  });
 }
 
 function replaceBookmark(item) {
   const index = bookmarks.findIndex(value => value.id === item.id);
   if (index >= 0) bookmarks[index] = item;
   else bookmarks.unshift(item);
+  renderRevision += 1;
   runLocalSearch();
   writeSnapshotCache({etag: "", data: {items: bookmarks}});
 }
@@ -419,7 +444,7 @@ async function openEditor(id = "") {
 async function load() {
   const cached = await readSnapshotCache();
   if (cached?.data?.items?.length) {
-    bookmarks = cached.data.items;
+    bookmarks = cached.data.items.map(prepareBookmark);
     visibleBookmarks = bookmarks;
     refreshGroupFilter();
     render();
@@ -430,11 +455,12 @@ async function load() {
   if (response.status === 304) return;
   if (!response.ok) throw new Error(`加载收藏失败：${response.status}`);
   const data = await response.json();
-  bookmarks = data.items;
+  bookmarks = data.items.map(prepareBookmark);
   visibleBookmarks = bookmarks;
   await writeSnapshotCache({etag: response.headers.get("ETag") || "", data});
   refreshGroupFilter();
-  render();
+  renderRevision += 1;
+  scheduleRender();
 }
 
 function normalizedSearchText(item) {
@@ -444,15 +470,25 @@ function normalizedSearchText(item) {
   ].filter(Boolean).join(" ").toLocaleLowerCase("zh-CN");
 }
 
+function prepareBookmark(item) {
+  Object.defineProperty(item, "_searchText", {
+    configurable: true,
+    enumerable: false,
+    writable: true,
+    value: normalizedSearchText(item),
+  });
+  return item;
+}
+
 function runLocalSearch() {
   const term = document.getElementById("search").value.trim().toLocaleLowerCase("zh-CN");
   const status = document.getElementById("searchStatus");
   visibleBookmarks = term
-    ? bookmarks.filter(item => normalizedSearchText(item).includes(term))
+    ? bookmarks.filter(item => (item._searchText || normalizedSearchText(item)).includes(term))
     : bookmarks;
   status.hidden = !term;
   if (term) status.textContent = `即时关键词结果 · ${visibleBookmarks.length} 条`;
-  render();
+  scheduleRender();
 }
 
 async function runSearch() {
@@ -461,6 +497,8 @@ async function runSearch() {
   if (!term || preferences.searchMode !== "smart") return;
   const status = document.getElementById("searchStatus");
   const sequence = ++searchSequence;
+  if (searchController) searchController.abort();
+  searchController = new AbortController();
   status.hidden = false;
   status.textContent = `即时结果 ${visibleBookmarks.length} 条 · 正在补充智能结果…`;
   const group = document.getElementById("groupFilter").value;
@@ -468,15 +506,17 @@ async function runSearch() {
   const serverGroup = serverGroupBy ? group : "";
   try {
     const result = await api(
-      `/api/search?q=${encodeURIComponent(term)}&mode=semantic&limit=80&group_by=${encodeURIComponent(serverGroupBy)}&group=${encodeURIComponent(serverGroup)}`
+      `/api/search?q=${encodeURIComponent(term)}&mode=semantic&limit=50&group_by=${encodeURIComponent(serverGroupBy)}&group=${encodeURIComponent(serverGroup)}`,
+      {signal: searchController.signal}
     );
     if (sequence !== searchSequence) return;
-    visibleBookmarks = result.items;
+    visibleBookmarks = result.items.map(prepareBookmark);
     status.textContent = `智能搜索结果 · ${result.items.length} 条${result.query_cache_hit ? " · 已使用持久缓存" : ""}`;
     if (result.fallback_error) status.textContent += " · Embedding 暂不可用，已降级";
     render();
   } catch (error) {
     if (sequence !== searchSequence) return;
+    if (error.name === "AbortError") return;
     toast(error.message, "error");
     status.textContent = "智能搜索不可用，已保留即时关键词结果";
   }
@@ -491,7 +531,12 @@ function setSearchMode(mode) {
   const panel = document.getElementById("aiSearchPanel");
   panel.hidden = mode !== "ai";
   document.body.classList.toggle("ai-floating-open", mode === "ai" && preferences.aiLayout === "floating");
-  if (mode === "ai") restoreAiPanelGeometry();
+  if (mode === "ai") {
+    syncSearchInputs(document.getElementById("search").value, "search");
+    restoreAiPanelGeometry();
+  } else {
+    setAiMinimized(false);
+  }
   runSearch();
 }
 
@@ -505,14 +550,17 @@ function applySearchBarMode(mode) {
 }
 
 function applyAiLayout(layout) {
+  const panel = document.getElementById("aiSearchPanel");
+  if (preferences.aiLayout === "floating") saveAiPanelGeometry();
   preferences.aiLayout = layout;
   localStorage.setItem("aiLayout", layout);
   document.getElementById("aiLayout").value = layout;
   document.body.dataset.aiLayout = layout;
   document.body.classList.toggle("ai-floating-open", preferences.searchMode === "ai" && layout === "floating");
-  document.getElementById("aiSearchPanel").classList.remove("minimized");
-  document.getElementById("aiMinimize").textContent = "−";
-  if (layout === "floating") restoreAiPanelGeometry();
+  setAiMinimized(false);
+  clearAiPanelGeometryStyles();
+  if (layout === "floating") requestAnimationFrame(restoreAiPanelGeometry);
+  else if (preferences.searchMode === "ai") panel.scrollIntoView({block: "nearest"});
 }
 
 async function loadAiModels() {
@@ -542,10 +590,7 @@ async function loadAiModels() {
 function restoreAiPanelGeometry() {
   const panel = document.getElementById("aiSearchPanel");
   if (preferences.aiLayout !== "floating" || window.innerWidth <= 850) {
-    panel.style.removeProperty("left");
-    panel.style.removeProperty("top");
-    panel.style.removeProperty("width");
-    panel.style.removeProperty("height");
+    clearAiPanelGeometryStyles();
     return;
   }
   let saved = {};
@@ -554,8 +599,10 @@ function restoreAiPanelGeometry() {
   } catch {
     localStorage.removeItem("aiPanelGeometry");
   }
-  const width = Math.min(Math.max(saved.width || 760, 520), window.innerWidth - 32);
-  const height = Math.min(Math.max(saved.height || Math.round(window.innerHeight * 0.7), 360), window.innerHeight - 32);
+  const validSaved = Number(saved.width) >= 520 && Number(saved.height) >= 360;
+  if (!validSaved && Object.keys(saved).length) localStorage.removeItem("aiPanelGeometry");
+  const width = Math.min(Math.max(validSaved ? saved.width : 760, 520), window.innerWidth - 32);
+  const height = Math.min(Math.max(validSaved ? saved.height : Math.round(window.innerHeight * 0.7), 360), window.innerHeight - 32);
   const left = Math.min(Math.max(saved.left ?? window.innerWidth - width - 24, 16), window.innerWidth - width - 16);
   const top = Math.min(Math.max(saved.top ?? 92, 16), window.innerHeight - height - 16);
   Object.assign(panel.style, {left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`});
@@ -571,6 +618,37 @@ function saveAiPanelGeometry() {
     width: Math.round(rect.width),
     height: Math.round(rect.height)
   }));
+}
+
+function clearAiPanelGeometryStyles() {
+  const panel = document.getElementById("aiSearchPanel");
+  for (const property of ["left", "right", "top", "bottom", "width", "height"]) {
+    panel.style.removeProperty(property);
+  }
+}
+
+function resetAiPanelGeometry() {
+  localStorage.removeItem("aiPanelGeometry");
+  clearAiPanelGeometryStyles();
+  restoreAiPanelGeometry();
+  toast("AI 助手位置已重置");
+}
+
+function setAiMinimized(minimized) {
+  const panel = document.getElementById("aiSearchPanel");
+  const dock = document.getElementById("aiRestoreDock");
+  if (minimized && preferences.aiLayout === "floating") saveAiPanelGeometry();
+  panel.hidden = minimized || preferences.searchMode !== "ai";
+  dock.hidden = !minimized || preferences.searchMode !== "ai" || preferences.aiLayout !== "floating";
+  document.body.classList.toggle("ai-floating-open", !minimized && preferences.searchMode === "ai" && preferences.aiLayout === "floating");
+}
+
+function syncSearchInputs(value, source) {
+  if (searchSyncing) return;
+  searchSyncing = true;
+  if (source !== "search") document.getElementById("search").value = value;
+  if (source !== "ai") document.getElementById("aiQuery").value = value;
+  searchSyncing = false;
 }
 
 function initAiFloatingWindow() {
@@ -610,10 +688,12 @@ function initAiFloatingWindow() {
     handle.addEventListener("pointerup", end);
     handle.addEventListener("pointercancel", end);
   });
-  document.getElementById("aiMinimize").addEventListener("click", () => {
-    panel.classList.toggle("minimized");
-    document.getElementById("aiMinimize").textContent = panel.classList.contains("minimized") ? "+" : "−";
+  document.getElementById("aiMinimize").addEventListener("click", () => setAiMinimized(true));
+  document.getElementById("aiRestoreDock").addEventListener("click", () => {
+    setAiMinimized(false);
+    restoreAiPanelGeometry();
   });
+  document.getElementById("aiResetPosition").addEventListener("click", resetAiPanelGeometry);
   if ("ResizeObserver" in window) {
     aiPanelResizeObserver = new ResizeObserver(() => {
       clearTimeout(aiPanelResizeObserver.saveTimer);
@@ -640,7 +720,7 @@ function parseSseChunk(buffer, onEvent) {
 }
 
 async function askAi() {
-  const query = document.getElementById("search").value.trim();
+  const query = document.getElementById("aiQuery").value.trim();
   if (!query) return toast("请先输入想找的内容", "error");
   if (aiController) aiController.abort();
   aiController = new AbortController();
@@ -683,7 +763,7 @@ async function askAi() {
     let buffer = "";
     const handle = (event, data) => {
       if (event === "results") {
-        visibleBookmarks = data.items;
+        visibleBookmarks = data.items.map(prepareBookmark);
         render();
         document.getElementById("searchStatus").hidden = false;
         document.getElementById("searchStatus").textContent =
@@ -717,6 +797,7 @@ function bindSuggestions() {
   document.querySelectorAll("[data-suggestion]").forEach(button => button.addEventListener("click", () => {
     const input = document.getElementById("search");
     input.value = `${input.value.trim()} ${button.dataset.suggestion}`.trim();
+    syncSearchInputs(input.value, "search");
     askAi();
   }));
 }
@@ -736,10 +817,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
   document.getElementById("groupFilter").addEventListener("change", runSearch);
-  document.getElementById("search").addEventListener("input", () => {
+  document.getElementById("search").addEventListener("input", event => {
+    syncSearchInputs(event.target.value, "search");
     clearTimeout(searchTimer);
     runLocalSearch();
     if (preferences.searchMode === "smart") searchTimer = setTimeout(runSearch, 300);
+  });
+  document.getElementById("aiQuery").addEventListener("input", event => {
+    syncSearchInputs(event.target.value, "ai");
+    clearTimeout(searchTimer);
+    runLocalSearch();
+    if (preferences.searchMode === "smart") searchTimer = setTimeout(runSearch, 300);
+  });
+  document.getElementById("aiQuery").addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      askAi();
+    }
   });
   document.querySelectorAll("[data-search-mode]").forEach(button =>
     button.addEventListener("click", () => setSearchMode(button.dataset.searchMode))

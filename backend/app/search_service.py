@@ -316,7 +316,9 @@ def hybrid_search(
     if not ordered_ids:
         return {"items": [], "semantic_used": semantic_used, "query_cache_hit": cache_hit, "fallback_error": error}
     bookmarks = db.scalars(
-        select(Bookmark).where(Bookmark.id.in_(ordered_ids), Bookmark.deleted_at.is_(None)).options(selectinload(Bookmark.sources))
+        select(Bookmark)
+        .where(Bookmark.id.in_(ordered_ids), Bookmark.deleted_at.is_(None))
+        .options(selectinload(Bookmark.sources), selectinload(Bookmark.link_health))
     ).all()
     by_id = {item.id: item for item in bookmarks}
     selected = [

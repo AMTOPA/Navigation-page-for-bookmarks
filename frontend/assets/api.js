@@ -2,6 +2,7 @@ let csrfToken = sessionStorage.getItem("csrfToken") || "";
 let progressTimer = null;
 
 async function api(path, options = {}) {
+  const started = performance.now();
   const headers = new Headers(options.headers || {});
   if (options.body && !(options.body instanceof FormData) && typeof options.body !== "string") {
     headers.set("Content-Type", "application/json");
@@ -18,6 +19,9 @@ async function api(path, options = {}) {
     }
   }
   const data = response.headers.get("content-type")?.includes("json") ? await response.json() : await response.text();
+  if (localStorage.getItem("performanceDebug") === "true") {
+    console.debug(`[api] ${options.method || "GET"} ${path}: ${Math.round(performance.now() - started)} ms`);
+  }
   if (!response.ok) throw new Error(data.detail || data || `请求失败：${response.status}`);
   return data;
 }

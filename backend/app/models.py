@@ -61,6 +61,11 @@ class Bookmark(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     sources: Mapped[list["BookmarkSource"]] = relationship(back_populates="bookmark", cascade="all, delete-orphan")
+    link_health: Mapped["LinkHealth | None"] = relationship(
+        back_populates="bookmark",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     @property
     def final_category(self) -> str:
@@ -149,6 +154,7 @@ class JobBatch(Base):
 class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (
+        Index("ix_jobs_created_at", "created_at"),
         Index("ix_jobs_status_created", "status", "created_at"),
         Index("ix_jobs_type_created", "job_type", "created_at"),
     )
@@ -165,6 +171,30 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LinkHealth(Base):
+    __tablename__ = "link_health"
+    __table_args__ = (
+        Index("ix_link_health_status_checked", "status", "checked_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    bookmark_id: Mapped[str] = mapped_column(
+        ForeignKey("bookmarks.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    final_url: Mapped[str] = mapped_column(Text, default="")
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    bookmark: Mapped[Bookmark] = relationship(back_populates="link_health")
 
 
 class AIProvider(Base):

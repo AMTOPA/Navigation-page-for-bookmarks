@@ -22,6 +22,7 @@ class Settings(BaseSettings):
         ".png,.jpg,.jpeg,.gif,.webp,.svg,.zip,.7z"
     )
     crawl_timeout_seconds: int = 15
+    health_check_timeout_seconds: int = 10
     display_timezone: str = "Asia/Shanghai"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8-sig", extra="ignore")

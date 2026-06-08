@@ -112,6 +112,8 @@ def bookmark_compact_dict(bookmark: Bookmark) -> dict:
         "ai_status": bookmark.ai_status,
         "local_copy_url": f"/api/files/{bookmark.id}" if bookmark.local_copy_path else "",
         "folder_paths": folders,
+        "health_status": bookmark.link_health.status if bookmark.link_health else "pending",
+        "health_checked_at": bookmark.link_health.checked_at if bookmark.link_health else None,
     }
 
 

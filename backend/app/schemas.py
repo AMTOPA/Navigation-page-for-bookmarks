@@ -110,8 +110,13 @@ class AccountUpdate(BaseModel):
 
 class BatchRequest(BaseModel):
     ids: list[str]
-    action: Literal["delete", "restore", "crawl", "ai", "search_index"]
+    action: Literal["delete", "restore", "crawl", "ai", "search_index", "health_check"]
     confirm: bool = False
+
+
+class HealthCheckSettingsUpdate(BaseModel):
+    enabled: bool = False
+    interval_days: int = Field(default=7, ge=1, le=365)
 
 
 class TokenCreate(BaseModel):

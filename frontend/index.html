@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>我的收藏导航</title>
+  <link rel="icon" href="/assets/default.svg">
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -44,20 +45,25 @@
       </div>
       <div id="searchStatus" class="search-status" hidden></div>
     </section>
-    <section id="aiSearchPanel" class="ai-search-panel" hidden>
-      <div class="ai-panel-head" id="aiPanelHandle">
-        <div><strong>AI 搜索助手</strong><span id="aiModelHint">先检索收藏，再由所选模型帮助缩小范围</span></div>
-        <div class="ai-panel-controls">
-          <label>模型<select id="aiModel" aria-label="AI 搜索模型"><option value="">正在加载…</option></select></label>
-          <label>布局<select id="aiLayout"><option value="floating">浮动窗口</option><option value="inline">搜索栏下方</option></select></label>
-          <button id="aiMinimize" class="ai-window-button" type="button" title="最小化 AI 窗口" aria-label="最小化 AI 窗口">−</button>
+    <div class="ai-panel-host">
+      <section id="aiSearchPanel" class="ai-search-panel" hidden>
+        <div class="ai-panel-head" id="aiPanelHandle">
+          <div><strong>AI 搜索助手</strong><span id="aiModelHint">先检索收藏，再由所选模型帮助缩小范围</span></div>
+          <div class="ai-panel-controls">
+            <label>模型<select id="aiModel" aria-label="AI 搜索模型"><option value="">正在加载…</option></select></label>
+            <label>布局<select id="aiLayout"><option value="floating">浮动窗口</option><option value="inline">搜索栏下方</option></select></label>
+            <button id="aiResetPosition" class="ai-window-button" type="button" title="重置窗口位置" aria-label="重置窗口位置">↺</button>
+            <button id="aiMinimize" class="ai-window-button" type="button" title="最小化 AI 窗口" aria-label="最小化 AI 窗口">−</button>
+          </div>
         </div>
-      </div>
-      <textarea id="aiContext" rows="2" placeholder="可选：补充你还记得的用途、页面内容、时间或关键词"></textarea>
-      <div class="ai-actions"><button class="button" id="askAi" type="button">询问 AI</button><button class="button ghost" id="stopAi" type="button" disabled>停止</button></div>
-      <div id="aiSuggestions" class="suggestion-list"></div>
-      <div id="aiAnswer" class="ai-answer muted">输入大概内容后点击“询问 AI”。</div>
-    </section>
+        <label class="ai-query-field"><span>要查找的内容</span><textarea id="aiQuery" rows="2" placeholder="直接在这里描述你记得的内容，Enter 发送，Shift+Enter 换行"></textarea></label>
+        <textarea id="aiContext" rows="2" placeholder="可选：补充用途、页面内容、时间或其他线索"></textarea>
+        <div class="ai-actions"><button class="button" id="askAi" type="button">询问 AI</button><button class="button ghost" id="stopAi" type="button" disabled>停止</button></div>
+        <div id="aiSuggestions" class="suggestion-list"></div>
+        <div id="aiAnswer" class="ai-answer muted">输入大概内容后点击“询问 AI”。</div>
+      </section>
+    </div>
+    <button id="aiRestoreDock" class="ai-restore-dock" type="button" hidden aria-label="恢复 AI 搜索助手"><span>AI</span> 恢复助手</button>
     <button id="searchOrb" class="search-orb" type="button" aria-label="展开搜索">⌕</button>
     <div id="dragNotice" class="notice" hidden>分类拖拽只在“AI/手动分类”分组下可用。</div>
     <div id="groups"><div class="skeleton-grid"><i></i><i></i><i></i></div></div>
