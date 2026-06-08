@@ -53,6 +53,29 @@ function invalidateSection(section) {
   }
 }
 
+function loadPageFor(name, force = false) {
+  if (name === "bookmarks") return loadBookmarks(force);
+  if (name === "jobs") return loadJobs(force);
+  if (name === "logs") return loadLogs(force);
+  if (name === "health") return loadHealth(force);
+}
+
+function syncPageSizeControls(name) {
+  document.querySelectorAll(`[data-page-size-for="${name}"], #${name === "bookmarks" ? "bookmark" : name}Pager [data-page-size]`).forEach(select => {
+    select.value = String(pages[name].pageSize);
+  });
+}
+
+function setPageSize(name, value) {
+  const state = pages[name];
+  state.pageSize = Number(value);
+  state.page = 1;
+  localStorage.setItem(`adminPageSize:${name}`, String(state.pageSize));
+  invalidateSection(name === "health" ? "health-checks" : name);
+  syncPageSizeControls(name);
+  loadPageFor(name, true);
+}
+
 function safeAdminTarget(item) {
   if (item.local_copy_url?.startsWith("/api/files/")) return item.local_copy_url;
   try {
@@ -267,12 +290,9 @@ function renderPager(id, name, state, onPage) {
     button.addEventListener("click", () => onPage(Number(button.dataset.page)))
   );
   root.querySelector("[data-page-size]").addEventListener("change", event => {
-    state.pageSize = Number(event.target.value);
-    state.page = 1;
-    localStorage.setItem(`adminPageSize:${name}`, String(state.pageSize));
-    invalidateSection(name);
-    onPage(1);
+    setPageSize(name, event.target.value);
   });
+  syncPageSizeControls(name);
 }
 
 async function loadTokens() {
@@ -427,6 +447,12 @@ function switchTab(tabName) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   await ensureSession();
+  document.querySelectorAll("[data-page-size-for]").forEach(select => {
+    const name = select.dataset.pageSizeFor;
+    select.innerHTML = PAGE_SIZE_OPTIONS.map(value => `<option value="${value}">${value}</option>`).join("");
+    select.value = String(pages[name].pageSize);
+    select.addEventListener("change", event => setPageSize(name, event.target.value));
+  });
   document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => switchTab(button.dataset.tab)));
   document.getElementById("menuButton").addEventListener("click", () => document.getElementById("adminSidebar").classList.toggle("open"));
   document.getElementById("adminSearch").addEventListener("input", () => {

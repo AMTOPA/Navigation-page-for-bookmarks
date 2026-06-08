@@ -106,6 +106,9 @@ def test_frontend_has_independent_ai_input_and_selectable_paging():
     assert "clearAiPanelGeometryStyles" in nav
     assert "PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100]" in admin
     assert 'localStorage.setItem(`adminPageSize:${name}`' in admin
+    admin_html = (ROOT / "frontend/admin.html").read_text(encoding="utf-8")
+    for section in ("bookmarks", "jobs", "logs", "health"):
+        assert f'data-page-size-for="{section}"' in admin_html
 
 
 def test_performance_indexes_are_present():

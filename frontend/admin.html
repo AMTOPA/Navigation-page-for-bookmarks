@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>后台管理 - 收藏导航</title>
   <link rel="icon" href="/assets/default.svg">
-  <link rel="stylesheet" href="/assets/style.css">
+  <link rel="stylesheet" href="/assets/style.css?v=20260608-2">
 </head>
 <body class="admin-page">
   <aside class="admin-sidebar" id="adminSidebar">
@@ -39,7 +39,7 @@
     </aside>
     <main class="admin-content">
       <section id="tab-bookmarks" class="tab-content active">
-        <div class="section-toolbar"><div class="search-box compact-search"><span>⌕</span><input id="adminSearch" class="input" placeholder="搜索收藏"></div><button class="button" id="adminAdd">新增</button><button class="button secondary" data-batch="crawl">批量抓取</button><button class="button secondary" data-batch="ai">批量 AI</button><button class="button secondary" data-batch="search_index">更新索引</button><button class="button danger" data-batch="delete">批量删除</button></div>
+        <div class="section-toolbar"><div class="search-box compact-search"><span>⌕</span><input id="adminSearch" class="input" placeholder="搜索收藏"></div><label class="page-size-control">每页<select data-page-size-for="bookmarks"></select></label><button class="button" id="adminAdd">新增</button><button class="button secondary" data-batch="crawl">批量抓取</button><button class="button secondary" data-batch="ai">批量 AI</button><button class="button secondary" data-batch="search_index">更新索引</button><button class="button danger" data-batch="delete">批量删除</button></div>
         <div class="table-card"><table class="bookmark-table"><thead><tr><th><input type="checkbox" id="selectAll"></th><th>标题</th><th>分类与标签</th><th>来源</th><th>状态</th><th>操作</th></tr></thead><tbody id="bookmarkRows"></tbody></table></div>
         <div class="pagination" id="bookmarkPager"></div>
       </section>
@@ -62,6 +62,7 @@
       <section id="tab-health" class="tab-content">
         <div class="section-toolbar">
           <select id="healthStatus"><option value="">全部状态</option><option value="ok">正常</option><option value="redirected">重定向</option><option value="failed">失败</option><option value="timeout">超时</option><option value="unsupported">不支持</option></select>
+          <label class="page-size-control">每页<select data-page-size-for="health"></select></label>
           <button class="button" id="runSelectedHealth">检查选中收藏</button>
           <button class="button secondary" id="runAllHealth">检查全部</button>
         </div>
@@ -76,8 +77,8 @@
         <div class="table-card"><table><thead><tr><th>标题与地址</th><th>状态</th><th>HTTP</th><th>延迟</th><th>最终地址/错误</th><th>检查时间</th><th>操作</th></tr></thead><tbody id="healthRows"></tbody></table></div>
         <div class="pagination" id="healthPager"></div>
       </section>
-      <section id="tab-jobs" class="tab-content"><div class="section-toolbar"><select id="jobStatus"><option value="">全部状态</option><option value="queued">等待</option><option value="running">运行</option><option value="success">成功</option><option value="failed">失败</option><option value="blocked">阻塞</option></select><button class="button secondary" onclick="loadJobs(true)">刷新</button></div><div class="table-card"><table><thead><tr><th>类型</th><th>状态</th><th>尝试</th><th>错误</th><th>时间</th><th>操作</th></tr></thead><tbody id="jobRows"></tbody></table></div><div class="pagination" id="jobPager"></div></section>
-      <section id="tab-logs" class="tab-content"><div class="section-toolbar"><select id="logLevel"><option value="">全部级别</option><option value="info">信息</option><option value="warning">警告</option><option value="error">错误</option></select><button class="button secondary" onclick="loadLogs(true)">刷新</button></div><div class="table-card"><table><thead><tr><th>事件</th><th>级别</th><th>消息</th><th>详情</th><th>时间</th></tr></thead><tbody id="logRows"></tbody></table></div><div class="pagination" id="logPager"></div></section>
+      <section id="tab-jobs" class="tab-content"><div class="section-toolbar"><select id="jobStatus"><option value="">全部状态</option><option value="queued">等待</option><option value="running">运行</option><option value="success">成功</option><option value="failed">失败</option><option value="blocked">阻塞</option></select><label class="page-size-control">每页<select data-page-size-for="jobs"></select></label><button class="button secondary" onclick="loadJobs(true)">刷新</button></div><div class="table-card"><table><thead><tr><th>类型</th><th>状态</th><th>尝试</th><th>错误</th><th>时间</th><th>操作</th></tr></thead><tbody id="jobRows"></tbody></table></div><div class="pagination" id="jobPager"></div></section>
+      <section id="tab-logs" class="tab-content"><div class="section-toolbar"><select id="logLevel"><option value="">全部级别</option><option value="info">信息</option><option value="warning">警告</option><option value="error">错误</option></select><label class="page-size-control">每页<select data-page-size-for="logs"></select></label><button class="button secondary" onclick="loadLogs(true)">刷新</button></div><div class="table-card"><table><thead><tr><th>事件</th><th>级别</th><th>消息</th><th>详情</th><th>时间</th></tr></thead><tbody id="logRows"></tbody></table></div><div class="pagination" id="logPager"></div></section>
       <section id="tab-account" class="tab-content"><article class="panel narrow stack"><span class="eyebrow">ACCOUNT SECURITY</span><h2>修改管理员账号</h2><p class="muted">保存后会撤销全部登录会话，需要使用新凭据重新登录。</p><form id="accountForm" class="stack"><label class="field"><span>用户名</span><input class="input" name="username" required minlength="3"></label><label class="field"><span>当前密码</span><input class="input" type="password" name="current_password" required></label><label class="field"><span>新密码（不修改可留空）</span><input class="input" type="password" name="new_password" minlength="10"></label><button class="button">更新账号</button></form></article></section>
     </main>
   </div>
@@ -86,6 +87,6 @@
   <div id="modelModal" class="modal"><form id="modelForm" class="modal-card narrow"><div class="modal-head"><h2>模型配置</h2><button type="button" class="modal-close" data-close-modal>×</button></div><input type="hidden" name="id"><div class="stack"><label class="field"><span>供应商</span><select name="provider_id" required></select></label><label class="field"><span>显示名称</span><input class="input" name="display_name" required></label><label class="field"><span>模型名称</span><input class="input" name="model_name" required></label><fieldset><legend>模型能力</legend><label><input type="checkbox" name="capability" value="chat"> 对话</label><label><input type="checkbox" name="capability" value="classification"> 分类</label><label><input type="checkbox" name="capability" value="summary"> 摘要</label><label><input type="checkbox" name="capability" value="embedding"> Embedding</label></fieldset><label class="check-row"><input type="checkbox" name="enabled" checked> 启用</label></div><div class="actions"><button type="button" class="button secondary" id="testModel">测试模型</button><button class="button">保存</button></div></form></div>
   <div id="confirmModal" class="modal"><div class="modal-card confirm-card"><h2 data-confirm-title></h2><p data-confirm-message></p><div class="actions"><button class="button ghost" data-confirm-no>取消</button><button class="button" data-confirm-yes>确认</button></div></div></div>
   <div id="toastRoot" class="toast-root"></div>
-  <script src="/assets/api.js"></script><script src="/assets/admin.js"></script>
+  <script src="/assets/api.js?v=20260608-2"></script><script src="/assets/admin.js?v=20260608-2"></script>
 </body>
 </html>
