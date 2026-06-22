@@ -38,6 +38,7 @@ def test_email_code_rejects_unbound_email_without_sending(client, monkeypatch):
 def test_email_code_login_and_rate_limit(client, monkeypatch):
     clear_codes()
     sent = []
+    monkeypatch.setattr(auth_api, "smtp_configured", lambda: True)
     monkeypatch.setattr(auth_api, "send_verification_code", lambda email, code, purpose: sent.append((email, code, purpose)))
 
     response = client.post(
@@ -74,6 +75,7 @@ def test_email_code_login_and_rate_limit(client, monkeypatch):
 def test_password_reset_with_email_code_revokes_sessions(client, monkeypatch):
     clear_codes()
     sent = []
+    monkeypatch.setattr(auth_api, "smtp_configured", lambda: True)
     monkeypatch.setattr(auth_api, "send_verification_code", lambda email, code, purpose: sent.append((email, code, purpose)))
     with SessionLocal() as db:
         user = db.scalar(select(AdminUser).where(AdminUser.username == "admin"))
@@ -112,3 +114,17 @@ def test_denylist_supports_single_ip_and_cidr(tmp_path: Path):
     assert denylist.contains("203.0.113.44")
     assert denylist.contains("198.51.100.99")
     assert not denylist.contains("192.0.2.1")
+
+
+def test_email_code_reports_missing_smtp(client, monkeypatch):
+    clear_codes()
+    monkeypatch.setattr(auth_api, "smtp_configured", lambda: False)
+
+    response = client.post(
+        "/api/auth/email-code",
+        json={"email": ALLOWED_EMAIL, "purpose": "login"},
+        headers={"X-Forwarded-For": "203.0.113.13"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "邮件服务未配置"

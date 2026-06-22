@@ -2,14 +2,14 @@ import hashlib
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .access_control import client_ip
 from .config import get_settings
-from .db import get_db
-from .email_service import send_verification_code
+from .db import SessionLocal, get_db
+from .email_service import send_verification_code, smtp_configured
 from .models import AdminUser, EmailVerificationCode, UserSession, utcnow
 from .schemas import EmailCodeRequest, EmailLoginRequest, PasswordResetConfirm
 from .security import create_session, hash_password
@@ -64,8 +64,24 @@ def _verify_code(db: Session, email: str, purpose: str, code: str) -> EmailVerif
     return record
 
 
+def _send_code_background(email: str, code: str, purpose: str, ip: str) -> None:
+    with SessionLocal() as db:
+        try:
+            send_verification_code(email, code, purpose)
+        except Exception as exc:
+            audit(db, "email_code_failed", "邮箱验证码发送失败", actor=email, level="error", ip=ip, error=str(exc)[:200])
+        else:
+            audit(db, "email_code_sent", "邮箱验证码已发送", actor=email, ip=ip, purpose=purpose)
+        db.commit()
+
+
 @router.post("/email-code")
-def request_email_code(payload: EmailCodeRequest, request: Request, db: Session = Depends(get_db)):
+def request_email_code(
+    payload: EmailCodeRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     settings = get_settings()
     email = _normalize_email(payload.email)
     ip = client_ip(request)
@@ -86,6 +102,10 @@ def request_email_code(payload: EmailCodeRequest, request: Request, db: Session 
     )
     if recent:
         raise HTTPException(429, "获取过于频繁，请一分钟后再试")
+    if not smtp_configured():
+        audit(db, "email_code_failed", "邮箱服务未配置", actor=email, level="error", ip=ip)
+        db.commit()
+        raise HTTPException(503, "邮件服务未配置")
 
     code = f"{secrets.randbelow(1_000_000):06d}"
     record = EmailVerificationCode(
@@ -96,16 +116,9 @@ def request_email_code(payload: EmailCodeRequest, request: Request, db: Session 
         expires_at=utcnow() + timedelta(minutes=settings.email_code_ttl_minutes),
     )
     db.add(record)
-    try:
-        send_verification_code(email, code, payload.purpose)
-    except Exception as exc:
-        db.rollback()
-        audit(db, "email_code_failed", "邮箱验证码发送失败", actor=email, level="error", ip=ip, error=str(exc)[:200])
-        db.commit()
-        raise HTTPException(503, "邮件发送失败，请稍后再试") from exc
-
-    audit(db, "email_code_sent", "邮箱验证码已发送", actor=email, ip=ip, purpose=payload.purpose)
+    audit(db, "email_code_queued", "邮箱验证码已进入发送队列", actor=email, ip=ip, purpose=payload.purpose)
     db.commit()
+    background_tasks.add_task(_send_code_background, email, code, payload.purpose, ip)
     return {"ok": True, "cooldown_seconds": settings.email_code_ip_cooldown_seconds}
 
 

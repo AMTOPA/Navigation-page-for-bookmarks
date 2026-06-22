@@ -62,8 +62,8 @@ async function sendCode(button) {
       method: "POST",
       body: {email, purpose: button.dataset.purpose},
     });
-    toast("验证码已发送，请查看邮箱");
-    showMessage("验证码已发送，请在有效期内完成操作。", "success");
+    toast("验证码已生成，正在投递到邮箱");
+    showMessage("验证码已生成，请稍后查看邮箱并在有效期内完成操作。", "success");
     startCountdown(button, result.cooldown_seconds || 60);
   } catch (error) {
     showMessage(error.message);
