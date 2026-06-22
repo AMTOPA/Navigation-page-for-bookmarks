@@ -13,6 +13,8 @@ from starlette.middleware.gzip import GZipMiddleware
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from .access_control import DenylistMiddleware, client_ip
+from .auth_api import router as auth_router
 from .config import get_settings
 from .db import Base, SessionLocal, engine, get_db
 from .extra_api import router as extra_router
@@ -88,9 +90,11 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
+app.add_middleware(DenylistMiddleware)
 app.include_router(extra_router)
 app.include_router(settings_router)
 app.include_router(search_router)
+app.include_router(auth_router)
 login_attempts: dict[str, deque] = defaultdict(deque)
 
 
@@ -110,7 +114,7 @@ def health():
 
 @app.post("/api/auth/login")
 def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     now = time.time()
     attempts = login_attempts[ip]
     while attempts and now - attempts[0] > 900:

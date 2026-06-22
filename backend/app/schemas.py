@@ -95,6 +95,22 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class EmailCodeRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    purpose: Literal["login", "reset_password"] = "login"
+
+
+class EmailLoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class PasswordResetConfirm(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    new_password: str = Field(min_length=10, max_length=256)
+
+
 class AccountUpdate(BaseModel):
     current_password: str
     username: str = Field(min_length=3, max_length=100)

@@ -117,6 +117,24 @@ class UserSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class EmailVerificationCode(Base):
+    __tablename__ = "email_verification_codes"
+    __table_args__ = (
+        Index("ix_email_codes_email_purpose_created", "email", "purpose", "created_at"),
+        Index("ix_email_codes_ip_purpose_created", "ip", "purpose", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    purpose: Mapped[str] = mapped_column(String(30), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    ip: Mapped[str] = mapped_column(String(64), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ApiToken(Base):
     __tablename__ = "api_tokens"
 

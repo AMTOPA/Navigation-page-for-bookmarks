@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     crawl_timeout_seconds: int = 15
     health_check_timeout_seconds: int = 10
     display_timezone: str = "Asia/Shanghai"
+    allowed_login_email: str = "3314982394@qq.com"
+    email_code_ttl_minutes: int = 10
+    email_code_ip_cooldown_seconds: int = 60
+    denylist_path: Path = Path("/opt/deny/denylist.txt")
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_ssl: bool = True
+    smtp_use_tls: bool = False
+    smtp_timeout_seconds: int = 12
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8-sig", extra="ignore")
 

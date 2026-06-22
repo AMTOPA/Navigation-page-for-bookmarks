@@ -11,51 +11,93 @@
   <main class="login-shell">
     <section class="login-hero">
       <span class="eyebrow">PRIVATE BOOKMARK SPACE</span>
-      <h1>把散落的收藏，变成随时可检索的知识入口。</h1>
-      <p>分类、摘要、同步和智能搜索都在一个安静的工作台里。</p>
+      <h1>把散落的收藏，整理成可搜索的知识入口。</h1>
+      <p>登录后可以同步 Edge 收藏、管理分类、使用智能检索，也可以在忘记密码时通过绑定邮箱重置。</p>
+      <div class="login-hero-points">
+        <span>本地同步</span>
+        <span>AI 搜索</span>
+        <span>安全管理</span>
+      </div>
       <div class="hero-orbit"><span></span><span></span><span></span></div>
     </section>
-    <form class="login-card stack" id="loginForm">
-      <div>
+
+    <section class="login-card stack" aria-labelledby="loginTitle">
+      <div class="login-card-head">
         <span class="eyebrow">欢迎回来</span>
-        <h2>登录收藏导航</h2>
-        <p class="muted">使用管理员账号访问导航页与后台。</p>
+        <h2 id="loginTitle">登录收藏导航</h2>
+        <p class="muted">选择一种方式进入你的私人收藏工作台。</p>
       </div>
-      <label class="field"><span>用户名</span><input class="input" name="username" autocomplete="username" required autofocus></label>
-      <label class="field"><span>密码</span><div class="password-field"><input class="input" type="password" name="password" autocomplete="current-password" required><button type="button" data-toggle-password>显示</button></div></label>
-      <button class="button wide" type="submit">登录</button>
+
+      <div class="auth-tabs" role="tablist" aria-label="登录方式">
+        <button type="button" class="active" data-auth-tab="password" role="tab" aria-selected="true">密码登录</button>
+        <button type="button" data-auth-tab="email" role="tab" aria-selected="false">邮箱验证码</button>
+        <button type="button" data-auth-tab="reset" role="tab" aria-selected="false">重置密码</button>
+      </div>
+
+      <form class="auth-panel stack" id="passwordLoginForm" data-auth-panel="password">
+        <label class="field">
+          <span>用户名</span>
+          <input class="input" name="username" autocomplete="username" required autofocus>
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <div class="password-field">
+            <input class="input" type="password" name="password" autocomplete="current-password" required>
+            <button type="button" data-toggle-password>显示</button>
+          </div>
+        </label>
+        <button class="button wide" type="submit">登录</button>
+      </form>
+
+      <form class="auth-panel stack" id="emailLoginForm" data-auth-panel="email" hidden>
+        <label class="field">
+          <span>绑定邮箱</span>
+          <input class="input" type="email" name="email" autocomplete="email" placeholder="请输入绑定邮箱" required>
+        </label>
+        <label class="field">
+          <span>验证码</span>
+          <div class="code-field">
+            <input class="input" name="code" inputmode="numeric" maxlength="6" pattern="\d{6}" placeholder="6 位数字验证码" required>
+            <button class="button secondary" type="button" data-send-code data-purpose="login">获取验证码</button>
+          </div>
+        </label>
+        <button class="button wide" type="submit">验证码登录</button>
+      </form>
+
+      <form class="auth-panel stack" id="resetPasswordForm" data-auth-panel="reset" hidden>
+        <label class="field">
+          <span>绑定邮箱</span>
+          <input class="input" type="email" name="email" autocomplete="email" placeholder="请输入绑定邮箱" required>
+        </label>
+        <label class="field">
+          <span>验证码</span>
+          <div class="code-field">
+            <input class="input" name="code" inputmode="numeric" maxlength="6" pattern="\d{6}" placeholder="6 位数字验证码" required>
+            <button class="button secondary" type="button" data-send-code data-purpose="reset_password">获取验证码</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>新密码</span>
+          <div class="password-field">
+            <input class="input" type="password" name="new_password" autocomplete="new-password" minlength="10" placeholder="至少 10 个字符" required>
+            <button type="button" data-toggle-password>显示</button>
+          </div>
+        </label>
+        <button class="button wide" type="submit">重置密码</button>
+      </form>
+
       <div class="message" id="message" role="alert"></div>
       <label class="theme-inline">界面主题
-        <select data-theme-select><option value="dashboard">现代仪表盘</option><option value="glass">玻璃科技</option><option value="compact">极简密集</option></select>
+        <select data-theme-select>
+          <option value="dashboard">现代仪表盘</option>
+          <option value="glass">玻璃科技</option>
+          <option value="compact">极简密集</option>
+        </select>
       </label>
-    </form>
+    </section>
   </main>
   <div id="toastRoot" class="toast-root"></div>
   <script src="/assets/api.js"></script>
-  <script>
-    document.querySelector("[data-toggle-password]").addEventListener("click", event => {
-      const input = document.querySelector('[name="password"]');
-      input.type = input.type === "password" ? "text" : "password";
-      event.target.textContent = input.type === "password" ? "显示" : "隐藏";
-    });
-    document.getElementById("loginForm").addEventListener("submit", async event => {
-      event.preventDefault();
-      const button = event.submitter;
-      const message = document.getElementById("message");
-      message.textContent = "";
-      button.disabled = true;
-      button.textContent = "正在登录…";
-      try {
-        const response = await api("/api/auth/login", {method:"POST", body:Object.fromEntries(new FormData(event.target))});
-        sessionStorage.setItem("csrfToken", response.csrf_token);
-        location.href = "/";
-      } catch (error) {
-        message.textContent = error.message;
-      } finally {
-        button.disabled = false;
-        button.textContent = "登录";
-      }
-    });
-  </script>
+  <script src="/assets/login.js?v=20260622-1"></script>
 </body>
 </html>

@@ -13,7 +13,7 @@ async function api(path, options = {}) {
   }
   const response = await fetch(path, {...options, headers});
   if (response.status === 401) {
-    if (path !== "/api/auth/login") {
+    if (!path.startsWith("/api/auth/")) {
       if (location.pathname !== "/login") location.href = "/login";
       throw new Error("登录状态已失效");
     }
